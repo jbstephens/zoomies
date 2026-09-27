@@ -270,7 +270,10 @@ function startLevel(i) {
   }, 40);
 }
 function resetRun() {
-  CAT.x = 0; CAT.y = 0.05; CAT.z = 0;
+  /* spawn ON the first floor, not at a flat 0.05 — romp 2 opens on the
+     porch deck at y=0.62 and a below-the-floor spawn falls into the void */
+  const g0 = groundAt(0, 0);
+  CAT.x = 0; CAT.y = (g0 > -50 ? g0 : 0) + 0.05; CAT.z = 0;
   CAT.vx = CAT.vy = CAT.vz = 0;
   CAT.face = 0; CAT.turn = 0;
   CAT.hearts = 3; CAT.invuln = 0;
@@ -280,7 +283,7 @@ function resetRun() {
   CAT.zoomT = 0; CAT.kibble = 0; CAT.kibSince = 0;
   CAT.mice[0] = CAT.mice[1] = CAT.mice[2] = false;
   CAT.idleT = 0; CAT.idleStage = 0; CAT.jumps = 0; CAT.grounded = true;
-  CAT.cp.x = 0; CAT.cp.y = 0; CAT.cp.z = 0;
+  CAT.cp.x = 0; CAT.cp.y = CAT.y - 0.05; CAT.cp.z = 0;
   CAT.bestZ = 0; CAT.deaths = 0; CAT.jumpsMade = 0; CAT.cukeLaunches = 0;
   resetIdleFlags();
   levelT0 = simT;

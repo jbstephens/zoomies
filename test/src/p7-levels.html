@@ -677,9 +677,19 @@ function dispatchChunk(o, pal, L) {
     case 'mouse': addPick('mouse', o.x, o.y, o.z); break;
     case 'enemy': addEnt(o.k, o.x, o.y, o.z, o.o); break;
     case 'check': {
-      const g = buildCheckpoint(o.x, 0, o.z);
-      WORLD.checkpoints.push({ x: o.x, y: 0, z: o.z, g, hit: false });
-      GLOW(o.x, 1.7, o.z, 3.0, 0xffd75e, 0.5);
+      /* bins don't exist yet mid-build — read the AUTHORED floors for the
+         walk height, or an elevated checkpoint is buried at y=0:
+         un-touchable (|CAT.y − y| < 2.4) and a through-the-floor respawn */
+      let fy = 0;
+      for (let i = 0; i < L.chunks.length; i++) {
+        const f = L.chunks[i];
+        if (f.t !== 'floor' || o.z < f.z0 || o.z >= f.z1) continue;
+        const hw = f.w / 2, xc = f.xc || 0;
+        if (o.x >= xc - hw && o.x <= xc + hw && f.y > fy) fy = f.y;
+      }
+      const g = buildCheckpoint(o.x, fy, o.z);
+      WORLD.checkpoints.push({ x: o.x, y: fy, z: o.z, g, hit: false });
+      GLOW(o.x, fy + 1.7, o.z, 3.0, 0xffd75e, 0.5);
       break;
     }
     case 'bossz': BOSS_SPEC = { z: o.z, k: o.k }; break;

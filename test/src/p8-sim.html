@@ -459,7 +459,10 @@ function fellOff() {
   respawn(false);
 }
 function respawn(full) {
-  CAT.x = CAT.cp.x; CAT.y = CAT.cp.y + 0.05; CAT.z = CAT.cp.z;
+  /* never respawn below the floor under the checkpoint (belt-and-braces
+     for the elevated-floor spawn bug) */
+  const gy = groundAt(CAT.cp.x, CAT.cp.z);
+  CAT.x = CAT.cp.x; CAT.y = Math.max(CAT.cp.y, gy > -50 ? gy : CAT.cp.y) + 0.05; CAT.z = CAT.cp.z;
   CAT.vx = CAT.vy = CAT.vz = 0;
   CAT.fainted = false; CAT.faintT = 0;
   CAT.rolling = false; CAT.pouncing = false;
