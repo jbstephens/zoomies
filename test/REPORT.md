@@ -512,3 +512,126 @@ enemies + boss); L7's 17 caster meshes are the king plus his planted rank.
 - Romp 5 is the vertical one and its canopy walk is narrow (4–5.6 m boards
   over a 5.6 m drop to a safety floor).  Nothing there is fatal, but it is
   the most "don't fall" section in the game.
+
+# PERF-FIX — "THE CUCUMBER KING runs 50.7 fps" (2026-09-27)
+
+**Verdict: no game bug.  Nothing in the game was changed.**  THE CUCUMBER KING
+holds **59.7–60.9 fps** on the real kiosk in every state that exists, and the
+closer's 50.7–55.3 readings were **the cost of watching**, not the cost of the
+fight: a CDP screencast attached to the kiosk page costs a flat **8–15 fps on
+the Pi**, and the closer's "engaged" readings were taken with one attached
+while their 60.4 "not engaged" control was not.
+
+Measured on the live console (`ssh -L 9223`, `pi/cdp.mjs`, fresh boot 08:17,
+1280x720@59.86, temp 58 C, `get_throttled=0x0`, `?fx=low&idle=99999`, served
+file md5 `9f2ecd03…` — byte-identical to the one the closer measured).
+
+## 1. The control readings do not reproduce
+
+rAF frame-time histograms, 8–10 s windows, cat parked in the arena:
+
+| state | fps | p50 | p90 | p99 | max | frames >30 ms |
+|---|---|---|---|---|---|---|
+| L7 z=232, **not** engaged (closer: 60.4) | 60.0 | 16.7 | 17.1 | 17.7 | 21.2 | 0 |
+| L7 z=236, engaged (closer: **55.3**) | 60.0 | 16.7 | 17.0 | 17.6 | 18.4 | 0 |
+| L7 z=240, engaged (closer: **50.7**) | 60.0 | 16.7 | 17.0 | 17.5 | 22.2 | 0 |
+| King **phase 1** (platY 9.4, 2 ranks) | 60.1 | 16.7 | 17.1 | 17.8 | 34.3 | 1 |
+| King **phase 2** (platY 11.4, 12 minions, hiBoss cam fov 66) | 60.1 | 16.7 | 17.0 | 17.6 | 18.4 | 0 |
+| King phase 2, cat up at y=10 (mid launch chain) | 60.0 | 16.7 | 17.2 | 17.6 | 19.6 | 0 |
+| King **WIN + confetti pickle slices** | 60.1 | 16.7 | 17.2 | 17.6 | 18.1 | 0 |
+| L7 throne approach (route control) | 60.1 | 16.6 | 17.1 | 17.7 | 18.2 | 0 |
+| L6 DELIVERY DRONE 9000 | 60.1 | 16.7 | 17.2 | 17.5 | 18.1 | 0 |
+| L5 tier 2 (heaviest state in the game) | 60.0 | 16.7 | 17.2 | 17.5 | 29.5 | 0 |
+
+p90 of 17.0 ms in the boss fight is **not a marginal state** — there is real
+headroom, and turning the post pass off only buys 0.2 fps because nothing is
+waiting on it.
+
+## 2. Every hypothesis in the brief, A/B'd live on the Pi
+
+One variable at a time, 5 s windows, cat parked at z=240 with the King at
+phase 2 (12 planted cucumbers, the widest camera the game ever uses):
+
+| A/B lever | fps |
+|---|---|
+| BASE — phase 2, engaged | 60.2 |
+| `#bossBar` DOM (name + pips + hint) hidden | 60.3 |
+| `#bossBar` back | 60.2 |
+| post pass OFF | 60.4 |
+| post pass ON | 60.2 |
+| `skyDome` hidden | 60.3 |
+| `skyDome` back | 60.3 |
+| all 7 route bands hidden | 60.2 |
+| bands back | 60.2 |
+| King group (deck + body + crown) hidden | 60.2 |
+| King group back | 60.3 |
+| all 12 minion cucumbers hidden | 60.3 |
+| minions back | 60.4 |
+| `#speedVig` forced to **full-screen opacity 1** | 60.3 |
+| `#speedVig` off | 60.3 |
+
+Nothing moves the needle.  For completeness, the other listed suspects:
+`BOSS.engaged` flipped false/true with the cat standing still, three rounds:
+60.2 / 60.2 / 60.0 vs 60.2 / 60.2 / 60.2.  The arena camera pull-back **is**
+engaging on the King (fov settles at 66.0, boom 11 m, lift 4.4 m — confirmed
+live via `__zoomies.cam()`), and it costs nothing.  A 9-minute continuous
+session in the fight with injected input, sfx firing and the cat running the
+arena: 59.7–60.1 throughout, `renderer.info` flat at 37 geometries / 1 texture
+/ 15 programs, JS heap flat at 39 MB, `ENTS` flat at 28 — no decay, no leak.
+
+## 3. The instrument is sensitive — proof
+
+The same harness, same state, with a deliberate regression forced in:
+
+| probe | fps |
+|---|---|
+| base (phase 2, engaged) | 60.2 |
+| shadows ON, King + minions casting (1024 map) | 60.4 |
+| **shadow map forced to 2048 with every Lambert mesh casting** | **44.9** |
+| shadows off again | 60.4 |
+
+A 15 fps regression shows up instantly.  A 9 fps one would not have hidden.
+(And the 2048 number independently re-confirms the house law from
+`pi/lab`: shadow-map size × caster count is the Pi's only real edge.)
+
+## 4. The actual payer: **the observer**
+
+| state | clean | with `Page.startScreencast` | delta |
+|---|---|---|---|
+| L7 z=232 **not engaged** (the closer's own control!) | 60.0 | **50.9** | −9.1 |
+| L7 z=236 engaged | 60.0 | 51.8 | −8.2 |
+| L7 z=240 engaged | 60.1 | 52.5 | −7.6 |
+| L6 rooftops | 60.0 | 50.8 | −9.2 |
+| L5 tier 2 | 60.0 | 44.9 | −15.1 |
+
+A screencast costs 8–15 fps on **every** state, the boss fight least of all.
+Screencast on/off around one fixed state: 60.0 → **51.4** → 59.7, with p90
+going 17.6 → 23.5 → 17.2.  `Performance.enable` on its own is free (60.1), and
+so is a tight loop of one-shot `Page.captureScreenshot` calls (60.1) — it is
+specifically the **continuous** frame readback that taxes the compositor.
+
+That single fact reproduces the closer's whole evidence set:
+- fps lands at ~51 while the game itself is at 60 → **50.7**;
+- GL calls and triangles are *unchanged* (the game is not doing more work) —
+  which is why the lightest state in the game read as the slowest;
+- main-thread JS barely moves (2.21 → 2.39 ms): the tax is paid in the
+  compositor, off the JS thread, which is exactly where CDP's own
+  `Performance` metrics cannot see it;
+- turning the post pass off recovers almost nothing, because post was never
+  the payer.
+
+## LAW (new, and it costs a whole investigation to relearn)
+
+**Never read fps on the kiosk with a live view attached.**  A CDP screencast /
+remote live view costs 8–15 fps on the Pi, flat, in every state, and it lies in
+the exact shape of a fill-rate bug: draw calls flat or *down*, JS flat, post-off
+useless, and the loss concentrated in whichever state you happened to be
+watching.  `pi/cdp.mjs fps` is safe on its own; a screencast in another window
+is not.  When an fps reading surprises you, **re-read it with nothing watching**
+before you go looking for a payer.
+
+Corollary for the harness: `__zoomies.bossKill()` runs `levelCleared()`, which
+**writes the save**.  Calling it on the console marked romp 7 cleared with a
+43.5 s bogus best; `zoomies_best` was restored byte-for-byte from the backup
+taken before the session (l1–l3 intact, l4–l7 absent, romp 7 still unclaimed).
+Never call `bossKill()` on the real console without backing the key up first.
