@@ -1,0 +1,903 @@
+<script>
+/* ═══════════════════ ZOOMIES! — pb  flow, HUD, input, loop ═════════════
+   States: BOOT → TITLE → SELECT → INTRO → PLAY ⇄ PAUSE → RESULTS →
+   (KITTY after romp 3) → SELECT.  Every one of them is reachable and
+   operable BY PAD ALONE (the console has no keyboard and no mouse), with
+   menu edges taken from the controller's press-EVENT stream and held
+   movement from state polling — never the other way round.
+
+   The arcade shell injects the back button, the quit overlay, the low-fx
+   flag handling and analytics.  None of that is in here (house law).    */
+
+const ST = { BOOT: 'BOOT', TITLE: 'TITLE', SELECT: 'SELECT', INTRO: 'INTRO',
+  PLAY: 'PLAY', PAUSE: 'PAUSE', RESULTS: 'RESULTS', KITTY: 'KITTY' };
+let STATE = ST.BOOT;
+let curLevel = 0, selIdx = 0, pauseIdx = 0;
+let introT = 0, resultsT = 0, levelT0 = 0, clearedT = 0, resultsPend = false;
+let lastResults = null;
+let DEMO = true;                 // title/select: the sim idles, nothing hurts
+
+const EL = {};
+function $(id) { return document.getElementById(id); }
+
+/* ── SVG icons (crisp at 720p, no bitmaps, no shadowBlur anywhere) ──── */
+const PAW_SVG = (col, cls) =>
+  '<svg class="paw ' + (cls || '') + '" viewBox="0 0 24 24" fill="' + col + '">' +
+  '<ellipse cx="5.6" cy="8.6" rx="2.7" ry="3.1"/><ellipse cx="10.6" cy="5.4" rx="2.7" ry="3.2"/>' +
+  '<ellipse cx="16.2" cy="6.2" rx="2.7" ry="3.2"/><ellipse cx="20.6" cy="10.4" rx="2.5" ry="2.9"/>' +
+  '<path d="M12.2 10.3c3.9 0 7 2.9 7 6.1 0 2.6-2.2 4.1-4.7 4.1-1.5 0-2.3-.5-2.3-.5s-1 .5-2.5.5' +
+  'c-2.6 0-4.7-1.5-4.7-4.1 0-3.2 3.2-6.1 7.2-6.1z"/></svg>';
+const MOUSE_SVG = (cls) =>
+  '<svg class="ms ' + (cls || '') + '" viewBox="0 0 24 24">' +
+  '<path d="M3.4 19.2c-2.2.2-2.6-2.2-.7-3.2" stroke="#e8b83a" stroke-width="1.5" ' +
+  'fill="none" stroke-linecap="round"/>' +
+  '<ellipse cx="11.6" cy="14.6" rx="8.1" ry="5.3" fill="#ffcf4a"/>' +
+  '<circle cx="14.4" cy="8.6" r="3.9" fill="#ffdd74"/>' +
+  '<circle cx="14.4" cy="8.6" r="2.0" fill="#f0a8a8"/>' +
+  '<ellipse cx="19.2" cy="13.2" rx="4.0" ry="3.5" fill="#ffdd74"/>' +
+  '<circle cx="21.1" cy="12.1" r="1.05" fill="#3a2a08"/>' +
+  '<circle cx="23.0" cy="13.8" r="1.0" fill="#f2909c"/>' +
+  '<path d="M17.4 15.4h3.6" stroke="#e8b83a" stroke-width="0.7" stroke-linecap="round"/>' +
+  '</svg>';
+
+/* ── save ──────────────────────────────────────────────────────────── */
+const SAVE_KEY = 'zoomies_best';
+let SAVE = null;
+function loadSave() {
+  SAVE = {};
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) SAVE = JSON.parse(raw) || {};
+  } catch (e) { SAVE = {}; }
+  for (const L of LEVELS) {
+    if (!SAVE[L.id]) SAVE[L.id] = { bestKibble: 0, bestTime: 0, mice: [false, false, false], cleared: false };
+    const s = SAVE[L.id];
+    if (!Array.isArray(s.mice) || s.mice.length !== 3) s.mice = [false, false, false];
+    s.bestKibble = s.bestKibble | 0;
+    s.bestTime = +s.bestTime || 0;
+    s.cleared = !!s.cleared;
+  }
+  return SAVE;
+}
+function writeSave() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) {}
+}
+function unlocked(i) { return i === 0 || !!SAVE[LEVELS[i - 1].id].cleared; }
+function fmtTime(t) {
+  if (!t) return '—';
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+/* ── HUD ───────────────────────────────────────────────────────────── */
+function hudHearts() {
+  let h = '';
+  for (let i = 0; i < 3; i++) h += PAW_SVG(i < CAT.hearts ? '#ff8f9a' : '#6b4a54', i < CAT.hearts ? '' : 'off');
+  EL.hearts.innerHTML = h;
+}
+function hudKibble() {
+  EL.kibN.textContent = CAT.kibble;
+  EL.kibBarF.style.width = Math.min(100, CAT.kibSince / KIB_PER_HEART * 100) + '%';
+}
+function hudMice() {
+  let h = '';
+  for (let i = 0; i < 3; i++) h += MOUSE_SVG(CAT.mice[i] ? 'got' : '');
+  EL.miceBox.innerHTML = h;
+}
+function hudHurt() {
+  EL.hurtVig.style.opacity = '1';
+  setTimeout(() => { EL.hurtVig.style.opacity = '0'; }, 140);
+  hudHearts();
+  if (window.ArcadeController) ArcadeController.rumble(0, { duration: 180, strong: 0.7, weak: 0.5 });
+}
+function hudBoss(on) {
+  if (on === true) EL.bossBar.style.display = 'block';
+  else if (on === false) EL.bossBar.style.display = 'none';
+  if (!BOSS) return;
+  EL.bossName.textContent = BOSS.name;
+  const pips = EL.bossPips.children;
+  for (let i = 0; i < pips.length; i++) pips[i].className = i < BOSS.hp ? '' : 'gone';
+}
+let bossHintTxt = '';
+function hudBossHint(t) {
+  if (t === bossHintTxt) return;
+  bossHintTxt = t;
+  EL.bossHint.textContent = t;
+}
+let bannerT = 0;
+function banner(main, sub) {
+  if (!main) { EL.banner.style.opacity = '0'; bannerT = 0; return; }
+  EL.bannerMain.textContent = main;
+  EL.bannerSub.textContent = sub || '';
+  EL.banner.style.opacity = '1';
+  bannerT = 1.9;
+}
+let hintT = 0;
+function hint(t, secs) {
+  EL.hintLine.textContent = t;
+  EL.hintLine.style.opacity = t ? '1' : '0';
+  hintT = secs || 3.5;
+}
+
+/* ── level-select cards (with a painted preview per romp) ───────────── */
+function drawCardArt(cv, li) {
+  const c = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  c.clearRect(0, 0, W, H);
+  if (li === 0) {
+    let g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#f6e2bd'); g.addColorStop(1, '#c08f49');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    g = c.createLinearGradient(0, 0, 0, H * 0.7);
+    g.addColorStop(0, '#fff6d8'); g.addColorStop(1, 'rgba(255,231,168,0)');
+    c.fillStyle = g; c.fillRect(W * 0.62, 6, W * 0.3, H * 0.62);
+    c.fillStyle = '#f7ecd8'; c.fillRect(W * 0.62, 6, W * 0.3, H * 0.5);
+    c.fillStyle = '#fff6d8'; c.fillRect(W * 0.645, 10, W * 0.25, H * 0.44);
+    c.fillStyle = '#5f7fa8'; c.fillRect(W * 0.06, H * 0.52, W * 0.42, H * 0.32);
+    c.fillStyle = '#49668a'; c.fillRect(W * 0.06, H * 0.42, W * 0.42, H * 0.13);
+    c.fillStyle = '#b8504c'; c.fillRect(0, H * 0.86, W, H * 0.14);
+    catGlyph(c, W * 0.62, H * 0.80, 20);
+  } else if (li === 1) {
+    let g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#bfe4ff'); g.addColorStop(0.55, '#e8f4d8'); g.addColorStop(1, '#6fa447');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#fff3c0';
+    c.beginPath(); c.arc(W * 0.83, H * 0.2, 13, 0, TAU); c.fill();
+    c.fillStyle = '#dccaa6';
+    for (let i = 0; i < 14; i++) c.fillRect(6 + i * 19, H * 0.40, 9, H * 0.26);
+    c.fillStyle = '#b49f78'; c.fillRect(0, H * 0.44, W, 5);
+    c.fillStyle = '#3f7f39';
+    for (const [x, r] of [[40, 16], [110, 13], [210, 18]]) {
+      c.beginPath(); c.arc(x, H * 0.82, r, 0, TAU); c.fill();
+    }
+    catGlyph(c, W * 0.55, H * 0.84, 20);
+  } else {
+    let g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0a0a22'); g.addColorStop(0.6, '#2c2263'); g.addColorStop(1, '#5b3a72');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#fff6d8';
+    c.beginPath(); c.arc(W * 0.18, H * 0.2, 9, 0, TAU); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.75)';
+    for (let i = 0; i < 26; i++) c.fillRect((i * 71) % W, (i * 37) % (H * 0.5), 1.6, 1.6);
+    const bl = [[20, 0.42, 34], [60, 0.30, 28], [96, 0.50, 40], [142, 0.24, 30], [186, 0.44, 36], [228, 0.34, 40]];
+    for (const [x, ty, w] of bl) {
+      c.fillStyle = '#241f38'; c.fillRect(x, H * ty, w, H);
+      c.fillStyle = '#ffd98a';
+      for (let r = 0; r < 4; r++) for (let q = 0; q < 2; q++) {
+        if ((x + r * 3 + q) % 3 === 0) continue;
+        c.fillRect(x + 5 + q * 13, H * ty + 7 + r * 12, 6, 6);
+      }
+    }
+    c.fillStyle = '#4d4459'; c.fillRect(0, H * 0.78, W, H * 0.22);
+    c.fillStyle = '#ff5fa8'; c.fillRect(W * 0.70, H * 0.56, 34, 12);
+    catGlyph(c, W * 0.34, H * 0.88, 20, '#eda254');
+  }
+}
+/* a tiny painted cat silhouette so every card has the star in it */
+function catGlyph(c, x, y, s, col) {
+  c.fillStyle = col || '#dd8a3c';
+  c.beginPath(); c.ellipse(x, y - s * 0.22, s * 0.52, s * 0.34, 0, 0, TAU); c.fill();
+  c.beginPath(); c.arc(x + s * 0.44, y - s * 0.56, s * 0.29, 0, TAU); c.fill();
+  c.beginPath(); c.moveTo(x + s * 0.28, y - s * 0.74); c.lineTo(x + s * 0.34, y - s * 1.06);
+  c.lineTo(x + s * 0.48, y - s * 0.78); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(x + s * 0.52, y - s * 0.78); c.lineTo(x + s * 0.64, y - s * 1.04);
+  c.lineTo(x + s * 0.68, y - s * 0.70); c.closePath(); c.fill();
+  c.strokeStyle = col || '#dd8a3c'; c.lineWidth = s * 0.15;
+  c.beginPath(); c.moveTo(x - s * 0.48, y - s * 0.28);
+  c.quadraticCurveTo(x - s * 0.95, y - s * 0.5, x - s * 0.80, y - s * 0.95); c.stroke();
+}
+function buildCards() {
+  EL.cards.innerHTML = '';
+  for (let i = 0; i < LEVELS.length; i++) {
+    const L = LEVELS[i], s = SAVE[L.id], lk = !unlocked(i);
+    const d = document.createElement('div');
+    d.className = 'card' + (lk ? ' locked' : '');
+    d.innerHTML =
+      '<div class="num">ROMP ' + (i + 1) + '</div>' +
+      '<div class="nm">' + L.name + '</div>' +
+      '<div class="sub">' + L.sub + '</div>' +
+      '<canvas class="art" width="274" height="104"></canvas>' +
+      '<div class="row"><span class="mice">' +
+      [0, 1, 2].map(k => MOUSE_SVG(s.mice[k] ? 'got' : '')).join('') +
+      '</span><span class="best">' + (s.cleared ? s.bestKibble + ' kibble · ' + fmtTime(s.bestTime) : 'not cleared') + '</span></div>' +
+      '<div class="lockTag">' + (lk ? 'CLEAR ROMP ' + i + ' TO UNLOCK' : '') + '</div>';
+    EL.cards.appendChild(d);
+    drawCardArt(d.querySelector('canvas'), i);
+  }
+  refreshCards();
+}
+function refreshCards() {
+  const cs = EL.cards.children;
+  for (let i = 0; i < cs.length; i++) cs[i].className = 'card' + (unlocked(i) ? '' : ' locked') + (i === selIdx ? ' sel' : '');
+}
+const PAUSE_ROWS = ['RESUME', 'RESTART ROMP', 'PICK ANOTHER ROMP'];
+function buildPause() {
+  EL.pmenu.innerHTML = PAUSE_ROWS.map((r, i) =>
+    '<div class="mrow' + (i === pauseIdx ? ' sel' : '') + '">' + r + '</div>').join('');
+  EL.pauseKeys.innerHTML =
+    'MOVE left stick / WASD &nbsp;·&nbsp; JUMP &#10005; / SPACE &nbsp;·&nbsp; SCRATCH &#9723; / J<br>' +
+    'ROLL &#9711; hold / K &nbsp;·&nbsp; POUNCE &#9711; in the air &nbsp;·&nbsp; TAIL WHIP &#9651; / L<br>' +
+    '<span style="color:#ff9d9d">P2: PRESS &#10005; ON PAD 2 FOR THE LASER</span>';
+}
+
+/* ── state machine ─────────────────────────────────────────────────── */
+function show(id, on) {
+  const e = $(id);
+  if (e) e.className = e.className.replace(/\s*\bon\b/, '') + (on ? ' on' : '');
+}
+function setState(s) {
+  if (STATE === s) return;
+  const prev = STATE;
+  STATE = s;
+  show('boot', s === ST.BOOT);
+  show('title', s === ST.TITLE);
+  show('select', s === ST.SELECT);
+  show('intro', s === ST.INTRO);
+  show('pause', s === ST.PAUSE);
+  show('results', s === ST.RESULTS);
+  show('kitty', s === ST.KITTY);
+  EL.hud.style.display = (s === ST.PLAY || s === ST.PAUSE) ? 'block' : 'none';
+  DEMO = (s === ST.TITLE || s === ST.SELECT || s === ST.BOOT);
+  if (s === ST.TITLE) {
+    const tot = LEVELS.reduce((a, L) => a + SAVE[L.id].mice.filter(Boolean).length, 0);
+    const done = LEVELS.filter(L => SAVE[L.id].cleared).length;
+    EL.titleBest.textContent = done ? (done + ' of 3 romps cleared · ' + tot + ' of 9 golden mice') : '';
+    ambStop();
+  }
+  if (s === ST.SELECT) { buildCards(); ambStop(); }
+  if (s === ST.PAUSE) { buildPause(); sfxPurrStop(); }
+  if (s === ST.PLAY) { ambStart(); hudHearts(); hudKibble(); hudMice(); }
+  if (s === ST.RESULTS) { ambStop(); sfxPurrStop(); sfxRollStop(); sfxZoomStop(); }
+  if (s === ST.KITTY) { buildParade(); }
+  if (prev === ST.PLAY && s !== ST.PAUSE) { sfxRollStop(); sfxZoomStop(); sfxVacDroneStop(); }
+}
+
+function startLevel(i) {
+  curLevel = clamp(i, 0, LEVELS.length - 1);
+  const L = LEVELS[curLevel];
+  EL.introNum.textContent = 'ROMP ' + (curLevel + 1);
+  EL.introNm.textContent = L.name;
+  EL.introSub.textContent = L.sub;
+  EL.introGo.textContent = 'GET READY…';
+  setState(ST.INTRO);
+  introT = 0;
+  /* the intro card is also the curtain the level build hides behind (LAW) */
+  setTimeout(() => {
+    buildLevel(curLevel);
+    resetRun();
+    EL.introGo.textContent = 'GO!';
+    EL.lvlNm.textContent = L.name;
+  }, 40);
+}
+function resetRun() {
+  CAT.x = 0; CAT.y = 0.05; CAT.z = 0;
+  CAT.vx = CAT.vy = CAT.vz = 0;
+  CAT.face = 0; CAT.turn = 0;
+  CAT.hearts = 3; CAT.invuln = 0;
+  CAT.fainted = false; CAT.faintT = 0;
+  CAT.rolling = false; CAT.pouncing = false;
+  CAT.scratchT = 0; CAT.whipT = 0; CAT.whipCD = 0; CAT.twistT = 0;
+  CAT.zoomT = 0; CAT.kibble = 0; CAT.kibSince = 0;
+  CAT.mice[0] = CAT.mice[1] = CAT.mice[2] = false;
+  CAT.idleT = 0; CAT.idleStage = 0; CAT.jumps = 0; CAT.grounded = true;
+  CAT.cp.x = 0; CAT.cp.y = 0; CAT.cp.z = 0;
+  CAT.bestZ = 0; CAT.deaths = 0; CAT.jumpsMade = 0; CAT.cukeLaunches = 0;
+  resetIdleFlags();
+  levelT0 = simT;
+  clearedT = 0;
+  bossHintTxt = '';
+  EL.bossBar.style.display = 'none';
+  camSnap();
+  hudHearts(); hudKibble(); hudMice();
+}
+function levelCleared() {
+  if (clearedT) return;
+  clearedT = 1;
+  const L = LEVELS[curLevel], s = SAVE[L.id];
+  const time = simT - levelT0;
+  const newK = CAT.kibble > s.bestKibble;
+  const newT = !s.bestTime || time < s.bestTime;
+  if (newK) s.bestKibble = CAT.kibble;
+  if (newT) s.bestTime = time;
+  for (let i = 0; i < 3; i++) if (CAT.mice[i]) s.mice[i] = true;
+  const firstClear = !s.cleared;
+  s.cleared = true;
+  writeSave();
+  lastResults = { level: curLevel, kibble: CAT.kibble, time, mice: CAT.mice.slice(),
+    newK, newT, firstClear, deaths: CAT.deaths };
+  EL.rHead.textContent = 'ROMP CLEAR!';
+  EL.rName.textContent = L.name;
+  EL.rstats.innerHTML =
+    '<div class="r"><span class="k">KIBBLE</span><span class="v' + (newK ? ' new' : '') + '">' + CAT.kibble + '</span></div>' +
+    '<div class="r"><span class="k">TIME</span><span class="v' + (newT ? ' new' : '') + '">' + fmtTime(time) + '</span></div>' +
+    '<div class="r"><span class="k">GOLDEN MICE</span><span class="v">' + CAT.mice.filter(Boolean).length + ' / 3</span></div>' +
+    '<div class="r"><span class="k">NAPS TAKEN</span><span class="v">' + CAT.deaths + '</span></div>';
+  EL.rmice.innerHTML = [0, 1, 2].map(k => MOUSE_SVG(CAT.mice[k] ? 'got' : '')).join('');
+  const next = curLevel + 1;
+  EL.rUnlock.textContent = next < LEVELS.length
+    ? (firstClear ? 'ROMP ' + (next + 1) + ' UNLOCKED — ' + LEVELS[next].name : '')
+    : 'YOU BEAT EVERY ROMP!';
+  resultsT = 0;
+  resultsPend = false;
+  setTimeout(() => setState(ST.RESULTS), 1500);
+}
+function buildParade() {
+  const tot = LEVELS.reduce((a, L) => a + SAVE[L.id].mice.filter(Boolean).length, 0);
+  let h = '';
+  for (let i = 0; i < Math.max(1, tot); i++)
+    h += '<span class="ms" style="left:' + (i * 96) + 'px" data-i="' + i + '">' + MOUSE_SVG('got') + '</span>';
+  EL.parade.innerHTML = h;
+  EL.parade._n = Math.max(1, tot);
+  EL.parade._t = 0;
+}
+
+/* ══════════════════════ input ═══════════════════════════════════════
+   Held movement → state POLLING.  Menu / action edges → the controller's
+   press-EVENT stream (plus keydown).  Never SELECT+START together and never
+   the PS/home button: the shell reserves those for quit-to-menu.        */
+const INP = { lx: 0, ly: 0, jump: false, scratch: false, whip: false, roll: false,
+  jumpEdge: false, scratchEdge: false, whipEdge: false, rollEdge: false };
+const EDGE = { jump: false, scratch: false, whip: false, roll: false, start: false,
+  confirm: false, back: false, left: false, right: false, up: false, down: false };
+const KEY = {};
+const INJ = { on: false, lx: 0, ly: 0, jump: false, scratch: false, whip: false, roll: false };
+let P2 = { joined: false, lx: 0, lz: 0 };
+
+function clearEdges() {
+  EDGE.jump = EDGE.scratch = EDGE.whip = EDGE.roll = EDGE.start = false;
+  EDGE.confirm = EDGE.back = EDGE.left = EDGE.right = EDGE.up = EDGE.down = false;
+  INP.jumpEdge = INP.scratchEdge = INP.whipEdge = INP.rollEdge = false;
+}
+function firstInput() { if (audioInit()) audioResume(); }
+
+if (window.ArcadeController) {
+  ArcadeController.on('press', ev => {
+    firstInput();
+    if (ev.button === 'home') return;                       // shell-reserved
+    if (ev.padIndex === 1) {
+      /* P2 drops in with ANY button — the laser joins at once */
+      if (!P2.joined) { P2.joined = true; laserJoin(); p2Tag(true); }
+      else if (ev.button === 'select') { P2.joined = false; laserLeave(); p2Tag(false); }
+      return;
+    }
+    if (ev.padIndex !== 0) return;
+    switch (ev.button) {
+      case 'south': EDGE.jump = true; EDGE.confirm = true; break;
+      case 'west': EDGE.scratch = true; break;
+      case 'north': EDGE.whip = true; break;
+      case 'east': EDGE.back = true; EDGE.roll = true; break;
+      case 'start': EDGE.start = true; break;
+      case 'left': EDGE.left = true; break;
+      case 'right': EDGE.right = true; break;
+      case 'up': EDGE.up = true; break;
+      case 'down': EDGE.down = true; break;
+    }
+  });
+  ArcadeController.on('connect', ev => {
+    if (ev.padIndex === 1 && !P2.joined) hint('P2: PRESS ✕ FOR THE LASER', 5);
+  });
+  ArcadeController.on('disconnect', ev => {
+    if (ev.padIndex === 1 && P2.joined) { P2.joined = false; laserLeave(); p2Tag(false); }
+  });
+}
+function p2Tag(on) {
+  EL.p2Tag.style.opacity = on ? '1' : '0';
+  EL.p2Tag.textContent = on ? 'P2 LASER ON' : '';
+}
+
+window.addEventListener('keydown', e => {
+  firstInput();
+  if (e.repeat) { return; }
+  const k = e.key.toLowerCase();
+  KEY[k] = true;
+  if (k === ' ' || k === 'arrowup' && false) {}
+  if (k === ' ') { EDGE.jump = true; EDGE.confirm = true; e.preventDefault(); }
+  if (k === 'enter') { EDGE.confirm = true; EDGE.start = true; }
+  if (k === 'escape') { EDGE.back = true; EDGE.start = true; }
+  if (k === 'j' || k === 'z') EDGE.scratch = true;
+  if (k === 'l' || k === 'c') EDGE.whip = true;
+  if (k === 'k' || k === 'x') EDGE.roll = true;
+  if (k === 'p') EDGE.start = true;
+  if (k === 'a' || k === 'arrowleft') EDGE.left = true;
+  if (k === 'd' || k === 'arrowright') EDGE.right = true;
+  if (k === 'w' || k === 'arrowup') EDGE.up = true;
+  if (k === 's' || k === 'arrowdown') EDGE.down = true;
+  if (k === '2') { if (!P2.joined) { P2.joined = true; laserJoin(); p2Tag(true); } else { P2.joined = false; laserLeave(); p2Tag(false); } }
+  if (k.startsWith('arrow') || k === ' ') e.preventDefault();
+}, { capture: false });
+window.addEventListener('keyup', e => { KEY[e.key.toLowerCase()] = false; });
+window.addEventListener('touchstart', firstInput, { passive: true, capture: true });
+
+function pollInput() {
+  let lx = 0, ly = 0, jump = false, scratch = false, whip = false, roll = false;
+  if (window.ArcadeController) {
+    const p = ArcadeController.pad(0);
+    if (p.connected) {
+      lx = p.axis('lx'); ly = p.axis('ly');
+      if (p.button('left')) lx -= 1;
+      if (p.button('right')) lx += 1;
+      if (p.button('up')) ly -= 1;
+      if (p.button('down')) ly += 1;
+      jump = p.button('south'); scratch = p.button('west');
+      whip = p.button('north'); roll = p.button('east');
+    }
+    const q = ArcadeController.pad(1);
+    if (q.connected) {
+      let qx = q.axis('lx'), qy = q.axis('ly');
+      if (q.button('left')) qx -= 1;
+      if (q.button('right')) qx += 1;
+      if (q.button('up')) qy -= 1;
+      if (q.button('down')) qy += 1;
+      /* the laser lives in the same screen space as the cat: screen-right is
+         world -X behind this camera (SCREEN_RIGHT_X) */
+      P2.lx = qx * SCREEN_RIGHT_X; P2.lz = -qy;
+    } else { P2.lx = 0; P2.lz = 0; }
+  }
+  if (KEY['a'] || KEY['arrowleft']) lx -= 1;
+  if (KEY['d'] || KEY['arrowright']) lx += 1;
+  if (KEY['w'] || KEY['arrowup']) ly -= 1;
+  if (KEY['s'] || KEY['arrowdown']) ly += 1;
+  if (KEY[' ']) jump = true;
+  if (KEY['j'] || KEY['z']) scratch = true;
+  if (KEY['l'] || KEY['c']) whip = true;
+  if (KEY['k'] || KEY['x']) roll = true;
+  if (INJ.on) {
+    lx += INJ.lx; ly += INJ.ly;
+    jump = jump || INJ.jump; scratch = scratch || INJ.scratch;
+    whip = whip || INJ.whip; roll = roll || INJ.roll;
+  }
+  INP.lx = clamp(lx, -1, 1); INP.ly = clamp(ly, -1, 1);
+  INP.jump = jump; INP.scratch = scratch; INP.whip = whip; INP.roll = roll;
+  if (EDGE.jump) INP.jumpEdge = true;
+  if (EDGE.scratch) INP.scratchEdge = true;
+  if (EDGE.whip) INP.whipEdge = true;
+  if (EDGE.roll) INP.rollEdge = true;
+}
+
+/* ── menu handling (all pad-reachable) ─────────────────────────────── */
+function menuTick(dt) {
+  if (STATE === ST.BOOT) { if (bootReady) setState(ST.TITLE); return; }
+  if (STATE === ST.TITLE) {
+    if (EDGE.confirm || EDGE.start) { sfxChirp(1.2); setState(ST.SELECT); selIdx = lastPlayable(); refreshCards(); }
+    return;
+  }
+  if (STATE === ST.SELECT) {
+    if (EDGE.left) { selIdx = (selIdx + LEVELS.length - 1) % LEVELS.length; sfxKibble(); refreshCards(); }
+    if (EDGE.right) { selIdx = (selIdx + 1) % LEVELS.length; sfxKibble(); refreshCards(); }
+    if (EDGE.confirm) {
+      if (unlocked(selIdx)) { sfxChime(1.1); startLevel(selIdx); }
+      else { sfxHurt(); hint('CLEAR ROMP ' + selIdx + ' FIRST', 2.5); }
+    }
+    if (EDGE.back) { sfxKibble(); setState(ST.TITLE); }
+    return;
+  }
+  if (STATE === ST.INTRO) {
+    introT += dt;
+    if (introT > 1.7 || (introT > 0.5 && EDGE.confirm)) { setState(ST.PLAY); banner('', ''); hint('LEFT STICK RUNS · ✕ JUMPS · ○ HOLD ROLLS', 5); }
+    return;
+  }
+  if (STATE === ST.PAUSE) {
+    if (EDGE.up) { pauseIdx = (pauseIdx + PAUSE_ROWS.length - 1) % PAUSE_ROWS.length; sfxKibble(); buildPause(); }
+    if (EDGE.down) { pauseIdx = (pauseIdx + 1) % PAUSE_ROWS.length; sfxKibble(); buildPause(); }
+    if (EDGE.start || EDGE.back) { setState(ST.PLAY); ambStart(); }
+    else if (EDGE.confirm) {
+      if (pauseIdx === 0) { setState(ST.PLAY); ambStart(); }
+      else if (pauseIdx === 1) { setState(ST.PLAY); startLevel(curLevel); }
+      else setState(ST.SELECT);
+    }
+    return;
+  }
+  if (STATE === ST.RESULTS) {
+    resultsT += dt;
+    /* LATCH the press instead of dropping it: the half-second the stats take
+       to land is exactly when a kid is already mashing ✕, and an eaten press
+       reads as a frozen game. */
+    if (EDGE.confirm || EDGE.start) resultsPend = true;
+    if (resultsT > 0.5 && resultsPend) {
+      resultsPend = false;
+      if (curLevel === LEVELS.length - 1) setState(ST.KITTY);
+      else { selIdx = Math.min(LEVELS.length - 1, curLevel + 1); setState(ST.SELECT); }
+    }
+    return;
+  }
+  if (STATE === ST.KITTY) {
+    EL.parade._t = (EL.parade._t || 0) + dt;
+    const n = EL.parade._n || 1;
+    const kids = EL.parade.children;
+    for (let i = 0; i < kids.length; i++) {
+      const x = ((EL.parade._t * 90 + i * 96) % (900 + 96)) - 96;
+      kids[i].style.left = x + 'px';
+      kids[i].style.top = (11 + Math.sin(EL.parade._t * 3 + i) * 7) + 'px';
+    }
+    if (EDGE.confirm || EDGE.start || EDGE.back) setState(ST.SELECT);
+    return;
+  }
+}
+function lastPlayable() {
+  let i = 0;
+  for (let k = 0; k < LEVELS.length; k++) if (unlocked(k)) i = k;
+  return i;
+}
+
+/* ══════════════════════ visuals ═════════════════════════════════════ */
+function drawGlows() {
+  /* ONE pass, ONE instanced additive draw call for every glow in the frame.
+     Nothing in the SIM emits glows (it would multiply them by the tick
+     count); everything is read off live state right here. */
+  glowReset();
+  const cz = CAT.z;
+  const G = WORLD.glows;
+  for (let i = 0; i < G.length; i++) {
+    const g = G[i];
+    const dz = g.z - cz;
+    if (dz < -18 || dz > 82) continue;
+    const s = g.pulse ? g.s * (1 + Math.sin(simT * g.pulse * 3.2 + g.z) * 0.12) : g.s;
+    glowAdd(g.x, g.y, g.z, s, g.r, g.g, g.b);
+  }
+  for (let i = 0; i < ENTS.length; i++) {
+    const e = ENTS[i];
+    if (e.dead || !e.alive) continue;
+    const dz = e.z - cz;
+    if (dz < -18 || dz > 62) continue;
+    if (e.k === 'vac' && e.st === 1) glowAdd(e.x, e.y + 0.42, e.z, 1.6, 1.0, 0.16, 0.10);
+    else if (e.k === 'zap' && e.st) glowAdd(e.x, e.y + 1.10, e.z, 2.3, 0.55, 0.92, 1.0);
+  }
+  for (let i = 0; i < PICKS.length; i++) {
+    const p = PICKS[i];
+    if (!p.on) continue;
+    const dz = p.z - cz;
+    if (dz < -12 || dz > 66) continue;
+    const c = p.k === 'fish' ? 0x6fd0e8 : p.k === 'milk' ? 0xfff6e2 : 0xffd75e;
+    const rc = rgb(c);
+    glowAdd(p.x, p.g.position.y + 0.12, p.z, p.k === 'mouse' ? 2.0 : 1.7, rc[0], rc[1], rc[2]);
+  }
+  for (let i = 0; i < PROJ.length; i++) {
+    const p = PROJ[i];
+    if (p.on && p.own === 1) glowAdd(p.x, p.y, p.z, 1.1, 1.0, 0.85, 0.45);
+  }
+  if (LASER.on && LASER.dot && LASER.dot.visible) glowAdd(LASER.x, LASER.y + 0.05, LASER.z, 1.2, 1.0, 0.16, 0.16);
+  if (CAT.zoomT > 0) glowAdd(CAT.x, CAT.y + 0.45, CAT.z, 2.6, 1.0, 0.78, 0.36);
+  if (CAT.invuln > 0 && !CAT.fainted) {
+    const p = 0.45 + 0.35 * Math.sin(simT * 26);
+    glowAdd(CAT.x, CAT.y + 0.45, CAT.z, 2.0, p, p * 0.55, p * 0.45);
+  }
+  const B = BOSS;
+  if (B && B.alive && B.engaged) {
+    if (B.k === 'vac') {
+      if (B.st === 1) glowAdd(B.x, B.y + 1.0, B.z, 6.5, 1.0, 0.18, 0.10);
+      if (B.st === 4) glowAdd(B.x, B.y + 1.7, B.z, 3.6, 1.0, 0.30, 0.20);
+    } else if (B.k === 'rex') {
+      if (B.st === 3) glowAdd(B.noseX, B.noseY + 0.2, B.noseZ, 2.3, 1.0, 0.55, 0.55);
+    } else {
+      glowAdd(B.x, B.y + 2.1, B.z, 2.5, 1.0, 0.82, 0.36);
+    }
+    if (B.hitFlash > 0) glowAdd(B.x, B.y + 1.2, B.z, 7.0 * B.hitFlash, 1.0, 0.9, 0.6);
+  }
+  glowFlush();
+}
+let tpChecked = 0;
+function updateVisuals(dt, now) {
+  /* band + crate culling: only what the fog can reach is even submitted */
+  const far = THEME.fogFar + 26;
+  for (let i = 0; i < WORLD.bands.length; i++) {
+    const b = WORLD.bands[i];
+    b.mesh.visible = b.z1 > CAT.z - 30 && b.z0 < CAT.z + far;
+  }
+  for (let i = 0; i < CRATES.length; i++) {
+    const c = CRATES[i];
+    if (c.g) c.g.visible = c.on && Math.abs(c.cz - CAT.z) < 62;
+  }
+  for (let i = 0; i < WORLD.checkpoints.length; i++) {
+    const c = WORLD.checkpoints[i];
+    if (c.g) c.g.visible = c.z > CAT.z - 20 && c.z < CAT.z + far;
+  }
+  if (skyDome) skyDome.position.set(CAT.x * 0.2, 0, CAT.z);
+  if (starField) starField.position.set(CAT.x * 0.2, 0, CAT.z);
+
+  poseCat(dt, now);
+  /* Invulnerability NEVER hides the cat.  A blink — at any duty cycle —
+     means the hero is missing from some frames, which is exactly when a kid
+     most needs to see where he is (and it kept eating him in screenshots).
+     Instead he pulses and picks up a warm additive glow (drawGlows). */
+  cat.root.visible = true;
+  if (CAT.invuln > 0 && !CAT.fainted) {
+    const k = 1 + Math.sin(now * 0.042) * 0.075;
+    cat.body.scale.multiplyScalar(k);
+  }
+
+  if (STATE === ST.TITLE || STATE === ST.SELECT) titleCam(dt, now);
+  else updateCam(dt);
+
+  if (P2.joined) updateLaser(dt, P2.lx, P2.lz);
+  drawGlows();
+  drawKibble(CAT.z);
+  drawPools();
+  audioTick(dt);
+
+  /* HUD tickers */
+  if (STATE === ST.PLAY) {
+    EL.lvlTm.textContent = fmtTime(simT - levelT0);
+    EL.speedVig.style.opacity = CAT.zoomT > 0 ? '1' : '0';
+    if (postMat) postMat.uniforms.speed.value = CAT.zoomT > 0 ? Math.min(1, CAT.zoomT / 0.6) : 0;
+  } else if (postMat) postMat.uniforms.speed.value = 0;
+  if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) EL.banner.style.opacity = '0'; }
+  if (hintT > 0) { hintT -= dt; if (hintT <= 0) EL.hintLine.style.opacity = '0'; }
+  if (flashT > 0) {
+    flashT -= dt;
+    EL.flashVig.style.opacity = String(Math.min(0.72, flashT * 1.8));
+  } else EL.flashVig.style.opacity = '0';
+  /* the injected virtual touch pad: lift the bottom HUD clear of it */
+  if (now - tpChecked > 400) {
+    tpChecked = now;
+    const on = !!document.getElementById('__arcade_touchpad');
+    if (on !== document.body.classList.contains('tp-on')) document.body.classList.toggle('tp-on', on);
+  }
+}
+/* a slow orbit around the idling cat — the title screen IS the game idling */
+function titleCam(dt, now) {
+  /* The title camera sits IN FRONT of him — the whole point of the cat is his
+     face, and the gameplay camera only ever sees his back.  Looking down the
+     -Z axis flips the screen-space mapping (screen-right is world +X here),
+     so aiming the look-at to his LEFT pushes him right of the logo column,
+     and aiming above him drops him into the lower third. */
+  const a = now * 0.00014;
+  CAM.x = smooth(CAM.x, CAT.x + 1.35 + Math.sin(a) * 0.85, 0.05, dt);
+  CAM.y = smooth(CAM.y, CAT.y + 1.05 + Math.sin(a * 1.7) * 0.14, 0.05, dt);
+  CAM.z = smooth(CAM.z, CAT.z + 3.15 + Math.cos(a) * 0.45, 0.05, dt);
+  CAM.tx = smooth(CAM.tx, CAT.x - 1.05, 0.08, dt);
+  CAM.ty = smooth(CAM.ty, CAT.y + 1.45, 0.08, dt);
+  CAM.tz = smooth(CAM.tz, CAT.z, 0.08, dt);
+  CAM.fov = smooth(CAM.fov, 46, 0.05, dt);
+  applyCam();
+}
+
+/* ══════════════════════ the frame ═══════════════════════════════════
+   LAW (a frame is not game time): the sim runs on a fixed-step accumulator
+   and the harness waits on SIM TICKS, never on rAF counts.              */
+let lastNow = 0, acc = 0, fpsAcc = 0, fpsN = 0, bootReady = false;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (!lastNow) lastNow = now;
+  const dtReal = Math.min(0.12, (now - lastNow) / 1000);
+  lastNow = now;
+
+  pollInput();
+
+  if (STATE === ST.PLAY) {
+    if (EDGE.start) { setState(ST.PAUSE); clearEdges(); }
+  }
+  if (STATE === ST.PLAY) {
+    acc += dtReal;
+    let n = Math.floor(acc / DT);
+    if (n > 8) { n = 8; acc = 0; } else acc -= n * DT;
+    for (let k = 0; k < n; k++) {
+      tickSim(INP);
+      if (k === 0) clearEdges();
+    }
+    if (n) {
+      /* the edge verbs land on exactly one tick, right here */
+    }
+  } else if (DEMO) {
+    /* TITLE / SELECT: the world keeps living so the cat can do his theater */
+    acc += dtReal;
+    let n = Math.floor(acc / DT);
+    if (n > 8) { n = 8; acc = 0; } else acc -= n * DT;
+    for (let k = 0; k < n; k++) tickSim(DEMO_INP);
+    menuTick(dtReal);
+    clearEdges();
+  } else {
+    acc = 0;
+    menuTick(dtReal);
+    clearEdges();
+  }
+  if (STATE === ST.PLAY) menuTick(dtReal);
+
+  updateVisuals(dtReal, now);
+
+  renderer.info.reset();
+  if (LOOK && FX.post) {
+    renderer.setRenderTarget(lookRT);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    renderer.render(postScene, postCam);
+  } else {
+    renderer.render(scene, camera);
+  }
+  TL.calls = renderer.info.render.calls;
+  TL.tris = renderer.info.render.triangles;
+  TL.glCalls = TL._glRead();
+  fpsAcc += dtReal; fpsN++;
+  if (fpsAcc > 0.5) { TL.fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+  TL.ms = dtReal * 1000;
+}
+const DEMO_INP = { lx: 0, ly: 0, jump: false, scratch: false, whip: false, roll: false,
+  jumpEdge: false, scratchEdge: false, whipEdge: false, rollEdge: false };
+
+/* ══════════════════════ boot ════════════════════════════════════════ */
+function fitStage() {
+  const st = $('stage');
+  if (!st) return;
+  const sc = Math.min(window.innerWidth / VW, window.innerHeight / VH);
+  st.style.transform = 'translate(-50%, -50%) scale(' + (sc > 1 ? 1 : sc) + ')';
+}
+window.addEventListener('resize', fitStage);
+window.addEventListener('orientationchange', fitStage);
+
+function boot() {
+  fitStage();
+  for (const id of ['hud', 'hearts', 'kibN', 'kibBarF', 'miceBox', 'lvlNm', 'lvlTm',
+    'bossBar', 'bossName', 'bossPips', 'bossHint', 'hintLine', 'p2Tag', 'speedVig',
+    'hurtVig', 'flashVig', 'banner', 'bannerMain', 'bannerSub', 'cards', 'pmenu',
+    'pauseKeys', 'introNum', 'introNm', 'introSub', 'introGo', 'rHead', 'rName',
+    'rstats', 'rmice', 'rUnlock', 'parade', 'titleBest']) EL[id] = $(id);
+  loadSave();
+  buildProjPool();
+  /* the title screen is the living room with the cat idling in it */
+  buildLevel(0);
+  resetRun();
+  CAT.x = 0.2; CAT.z = 9.5;
+  CAT.idleT = IDLE_T[1] + 0.4; CAT.idleStage = 2;
+  camSnap();
+  hudHearts(); hudKibble(); hudMice();
+  bootReady = true;
+  setState(ST.TITLE);
+  requestAnimationFrame(frame);
+}
+
+/* ══════════════════════ the debug / harness API ═════════════════════
+   Everything the CDP harness and the Pi measurements drive through.
+   Waits are on SIM TICKS (`ticks()`), never on frames.                  */
+window.__zoomies = {
+  version: 1,
+  state: () => STATE,
+  setState: s => { setState(ST[s] || s); return STATE; },
+  levels: () => LEVELS.map((L, i) => ({ id: L.id, name: L.name, len: L.len, unlocked: unlocked(i) })),
+  level: () => curLevel,
+  /* synchronous jump straight into a romp — no intro card, no timers, so a
+     harness can build, reset and assert inside one eval */
+  gotoLevel(n) {
+    curLevel = clamp(n | 0, 0, LEVELS.length - 1);
+    buildLevel(curLevel);
+    resetRun();
+    EL.lvlNm.textContent = LEVELS[curLevel].name;
+    setState(ST.PLAY);
+    return curLevel;
+  },
+  forceUnlockAll() {
+    for (const L of LEVELS) SAVE[L.id].cleared = true;
+    writeSave();
+    if (STATE === ST.SELECT) buildCards();
+    return true;
+  },
+  clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} loadSave(); return true; },
+  save: () => JSON.parse(JSON.stringify(SAVE)),
+  /* teleport MOVES THE CAT ONLY — it deliberately leaves the checkpoint
+     alone, so a harness can teleport somewhere and still assert that a
+     faint sends him back to the real food bowl. */
+  teleport(x, y, z) {
+    CAT.x = x; CAT.y = y; CAT.z = z;
+    CAT.vx = CAT.vy = CAT.vz = 0;
+    camSnap();
+    return { x: CAT.x, y: CAT.y, z: CAT.z };
+  },
+  checkpoint(x, y, z) {
+    CAT.cp.x = x; CAT.cp.y = y; CAT.cp.z = z;
+    return { x: CAT.cp.x, y: CAT.cp.y, z: CAT.cp.z };
+  },
+  pos: () => ({ x: CAT.x, y: CAT.y, z: CAT.z }),
+  vel: () => ({ x: CAT.vx, y: CAT.vy, z: CAT.vz }),
+  hearts: () => CAT.hearts,
+  setHearts(n) { CAT.hearts = clamp(n | 0, 0, 3); hudHearts(); return CAT.hearts; },
+  kibble: () => CAT.kibble,
+  mice: () => CAT.mice.slice(),
+  simTime: () => simT,
+  ticks: () => simTicks,
+  step(n) {
+    n = Math.max(1, Math.min(4000, n | 0));
+    for (let i = 0; i < n; i++) { tickSim(STATE === ST.PLAY ? INP : DEMO_INP); if (i === 0) clearEdges(); }
+    return simTicks;
+  },
+  cat: () => ({
+    x: CAT.x, y: CAT.y, z: CAT.z, vx: CAT.vx, vy: CAT.vy, vz: CAT.vz,
+    face: CAT.face, grounded: CAT.grounded, jumps: CAT.jumps,
+    rolling: CAT.rolling, pouncing: CAT.pouncing, fainted: CAT.fainted,
+    scratchT: CAT.scratchT, whipT: CAT.whipT, twistT: CAT.twistT,
+    hearts: CAT.hearts, invuln: CAT.invuln, zoomT: CAT.zoomT,
+    kibble: CAT.kibble, deaths: CAT.deaths, bestZ: CAT.bestZ,
+    cukeLaunches: CAT.cukeLaunches, jumpsMade: CAT.jumpsMade,
+    cp: { x: CAT.cp.x, y: CAT.cp.y, z: CAT.cp.z },
+  }),
+  idle: () => ({ t: CAT.idleT, stage: CAT.idleStage, wall: CAT.idleWall,
+    fired: idleFired.slice(), anim: cat.idleName || '' }),
+  boss: () => BOSS ? { k: BOSS.k, name: BOSS.name, hp: BOSS.hp, alive: BOSS.alive,
+    engaged: BOSS.engaged, st: BOSS.st, x: BOSS.x, y: BOSS.y, z: BOSS.z,
+    gateZ: BOSS.gateZ, win: BOSS.winT > 0 } : null,
+  ents: () => ENTS.map(e => ({ k: e.k, x: e.x, y: e.y, z: e.z, alive: e.alive,
+    dead: e.dead, st: e.st, mesm: e.mesm })),
+  entCount: k => ENTS.filter(e => e.k === k && e.alive).length,
+  picks: () => PICKS.map(p => ({ k: p.k, x: p.x, y: p.y, z: p.z, on: p.on })),
+  kibbleLeft: () => KIBS.filter(k => k.on).length,
+  proj: () => PROJ.filter(p => p.on).map(p => ({ k: p.k, x: p.x, y: p.y, z: p.z, own: p.own })),
+  reflectKills: () => REFLECT_KILLS,
+  laser: () => ({ on: LASER.on, joined: P2.joined, x: LASER.x, z: LASER.z,
+    mesm: ENTS.filter(e => e.mesm > 0).length }),
+  p2join() { if (!P2.joined) { P2.joined = true; laserJoin(); p2Tag(true); } return P2.joined; },
+  p2leave() { P2.joined = false; laserLeave(); p2Tag(false); return P2.joined; },
+  inject(o) {
+    if (!o) { INJ.on = false; INJ.lx = INJ.ly = 0; INJ.jump = INJ.scratch = INJ.whip = INJ.roll = false; return false; }
+    INJ.on = true;
+    if ('lx' in o) INJ.lx = o.lx;
+    if ('ly' in o) INJ.ly = o.ly;
+    if ('jump' in o) INJ.jump = !!o.jump;
+    if ('scratch' in o) INJ.scratch = !!o.scratch;
+    if ('whip' in o) INJ.whip = !!o.whip;
+    if ('roll' in o) INJ.roll = !!o.roll;
+    return true;
+  },
+  edge(name) {
+    if (name === 'jump') EDGE.jump = true;
+    else if (name === 'scratch') EDGE.scratch = true;
+    else if (name === 'whip') EDGE.whip = true;
+    else if (name === 'roll') EDGE.roll = true;
+    else if (name === 'start') EDGE.start = true;
+    else if (name === 'confirm') EDGE.confirm = true;
+    else if (name === 'back') EDGE.back = true;
+    else if (name === 'left') EDGE.left = true;
+    else if (name === 'right') EDGE.right = true;
+    else if (name === 'up') EDGE.up = true;
+    else if (name === 'down') EDGE.down = true;
+    return true;
+  },
+  give(kind) {
+    if (kind === 'fish') { CAT.hearts = 3; hudHearts(); }
+    else if (kind === 'milk') { CAT.zoomT = ZOOM_TIME; sfxZoomStart(); }
+    else if (kind === 'mouse') { for (let i = 0; i < 3; i++) if (!CAT.mice[i]) { CAT.mice[i] = true; break; } hudMice(); }
+    else if (kind === 'kibble') gainKibble(1, CAT.x, CAT.y + 0.4, CAT.z);
+    return true;
+  },
+  hurt() { CAT.invuln = 0; return hurtCat(CAT.x + 1, CAT.z + 1, 5); },
+  faint() { CAT.hearts = 1; CAT.invuln = 0; return hurtCat(CAT.x + 1, CAT.z + 1, 5); },
+  /* SCREEN-SPACE assertion hook: the cat's position THROUGH THE LIVE CAMERA */
+  screen() {
+    const v = new THREE.Vector3(CAT.x, CAT.y + 0.4, CAT.z);
+    v.project(camera);
+    return { x: v.x, y: v.y, z: v.z, px: (v.x * 0.5 + 0.5) * VW, py: (-v.y * 0.5 + 0.5) * VH };
+  },
+  screenX() { return window.__zoomies.screen().x; },
+  screenOf(x, y, z) {
+    const v = new THREE.Vector3(x, y, z);
+    v.project(camera);
+    return { x: v.x, y: v.y };
+  },
+  cam: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z, fov: camera.fov }),
+  perf: () => ({ calls: TL.calls, glCalls: TL.glCalls, tris: TL.tris, fps: TL.fps,
+    ms: TL.ms, bakeMs: WORLD.bakeMs, worldTris: WORLD.tris,
+    bands: WORLD.bands.length, bandsVisible: WORLD.bands.filter(b => b.mesh.visible).length,
+    catTris: cat.tris, casters: casterInfo(), glows: glowN,
+    sparks: sparks.a.filter(o => o.on).length, bits: bits.a.filter(o => o.on).length,
+    solids: WORLD.solids.length, ents: ENTS.length, kibs: KIBS.length }),
+  world: () => ({ theme: WORLD.theme, len: WORLD.length, bands: WORLD.bands.length,
+    checkpoints: WORLD.checkpoints.map(c => ({ z: c.z, hit: c.hit })),
+    movers: WORLD.movers.length, glows: WORLD.glows.length, crates: CRATES.length,
+    cratesLeft: CRATES.filter(c => c.on).length, bakeMs: WORLD.bakeMs }),
+  ground: (x, z) => groundAt(x, z),
+  corrHW: z => corrHW(z),
+  flags: () => ({ LOWFX, LOOK, shadow: FX.shadow, post: FX.post, msaa: FX.msaa }),
+  toggle(name, on) {
+    if (name === 'shadow') {
+      FX.shadow = !!on;
+      renderer.shadowMap.enabled = FX.shadow;
+      sunLight.castShadow = FX.shadow;
+      scene.traverse(o => { if (o.material && o.material.isMeshLambertMaterial) o.material.needsUpdate = true; });
+    } else if (name === 'post') FX.post = !!on;
+    return { shadow: FX.shadow, post: FX.post };
+  },
+  results: () => lastResults,
+  cleared: () => !!clearedT,
+  bossKill() { if (BOSS && BOSS.alive && BOSS.winT <= 0) { BOSS.hp = 1; return bossHit('debug'); } return false; },
+  audioLive: () => !!AC,
+};
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+</script>

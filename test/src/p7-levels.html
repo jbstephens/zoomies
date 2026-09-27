@@ -1,0 +1,795 @@
+<script>
+/* ═══════════════════ ZOOMIES! — p7  levels are DATA ════════════════════
+   A level is `{theme, palette, chunks:[…]}` and the engine in p5 is shared
+   (the Fairway-Classic holes-as-data precedent).  That is what keeps three
+   levels cheap and a level 4 possible: nothing below is code, it is a
+   corridor score sheet.  The tiny `A()` authoring helper exists only so the
+   score sheet reads like one.                                            */
+
+/* Every prop builder reads named palette keys.  PAL_BASE carries the FULL
+   key set so a theme can never be missing one — a missing colour used to be
+   a hard crash mid-build (and a half-built level); now it is simply the
+   base value, and C3 paints an unmistakable magenta if one is ever null. */
+const PAL_BASE = {
+  floorA: 0x9a8a72, floorB: 0x8c7d66, floorC: 0xa6957c,
+  wall: 0xe8ddc8, wallLow: 0xcfc2aa, trim: 0xf2ebdc,
+  couch: 0x5f7fa8, couchD: 0x49668a, cushion: 0x7d9cc4,
+  wood: 0x8d6035, woodD: 0x6e4826,
+  book1: 0xc4504a, book2: 0x3f7f9f, book3: 0xd8a83c, book4: 0x5f9f5a,
+  counter: 0xeae2cd, counterD: 0xcdc1a8, metal: 0x9ba4ac, metalD: 0x6e757d,
+  fridge: 0xdde1e4, fridgeD: 0xc2c8cc,
+  crate: 0xc79a5c, crateD: 0xa07641,
+  rug: 0xb8504c, rug2: 0xe4cb9f,
+  shade: 0xf4e2b8, lampLit: 0xfff3cf, lampGlow: 0xffd98a,
+  pot: 0xc2724a, plantL: 0x57975a, plantD: 0x3f7444,
+  winLit: 0xfff6d8, winGlow: 0xffe7a8, sunPatch: 0xffe9b0,
+  catpost: 0xbfa77e,
+  grass: 0x6fa447, grassD: 0x5a8d38, dirt: 0x7d6142,
+  plank: 0xc79b62, rail: 0xd8b98a, railD: 0xb2925f,
+  fence: 0xdccaa6, fenceD: 0xb49f78,
+  bush: 0x3f7f39, bushD: 0x33692f, bark: 0x6a4a2c,
+  leaf: 0x4e9245, leafD: 0x3d7a38, stem: 0x5f8f4a,
+  stone: 0xb6b3a6, stoneD: 0x9e9b8e, water: 0x6fc6e8, waterGlow: 0x9fe4ff,
+  dog1: 0xc05540, dog2: 0x8f3d2d, hose: 0x3f8f5f,
+  shed: 0xb0a288, shedD: 0x8d8069,
+  roofA: 0x4d4459, roofB: 0x3d3547, brick: 0x6a4a52, brickD: 0x543a42,
+  parapet: 0x574d64, parapetD: 0x6a5f78,
+  tower: 0x8d8598, towerD: 0x6e6780, towerLeg: 0x5f5a70, towerDeck: 0x7a7288,
+  towerGlow: 0xffc478,
+  rope: 0xb8ae9a, cloth1: 0xe8e2d2, cloth2: 0x8fbfe0, cloth3: 0xe0a0b8,
+  dump: 0x3f6b4a, dumpD: 0x325740, awn2: 0xf0ead8,
+  city1: 0x241f38, city2: 0x2c2442, city3: 0x1c1830,
+  winA: 0xffd98a, winB: 0x9fe0ff, glowBand: 0x3a2c52,
+  hill: 0x93b487, farHouse: 0xe0cfae, farRoof: 0xa8674a, farTree: 0x6f9a5f,
+};
+
+const PAL_HOUSE = Object.assign({}, PAL_BASE, {
+  floorA: 0xb5843f, floorB: 0xa4763a, floorC: 0xc08f49,
+  wall: 0xf2dfc0, wallLow: 0xdcc3a0, trim: 0xf7ecd8,
+  couch: 0x5f7fa8, couchD: 0x49668a, cushion: 0x7d9cc4,
+  wood: 0x8d6035, woodD: 0x6e4826,
+  book1: 0xc4504a, book2: 0x3f7f9f, book3: 0xd8a83c, book4: 0x5f9f5a,
+  counter: 0xeae2cd, counterD: 0xcdc1a8, metal: 0x9ba4ac,
+  fridge: 0xdde1e4, fridgeD: 0xc2c8cc,
+  crate: 0xc79a5c, crateD: 0xa07641,
+  rug: 0xb8504c, rug2: 0xe4cb9f,
+  shade: 0xf4e2b8, lampLit: 0xfff3cf, lampGlow: 0xffd98a,
+  pot: 0xc2724a, plantL: 0x57975a, plantD: 0x3f7444,
+  winLit: 0xfff6d8, winGlow: 0xffe7a8, sunPatch: 0xffe9b0,
+  catpost: 0xbfa77e,
+  hill: 0x93b487, farHouse: 0xe0cfae, farRoof: 0xa8674a, farTree: 0x6f9a5f,
+});
+const PAL_YARD = Object.assign({}, PAL_BASE, {
+  floorA: 0x6fa447, floorB: 0x619439, floorC: 0x7cb051,
+  grass: 0x6fa447, grassD: 0x5a8d38, dirt: 0x7d6142,
+  plank: 0xc79b62, rail: 0xd8b98a, railD: 0xb2925f,
+  fence: 0xdccaa6, fenceD: 0xb49f78,
+  bush: 0x3f7f39, bushD: 0x33692f, bark: 0x6a4a2c,
+  leaf: 0x4e9245, leafD: 0x3d7a38, stem: 0x5f8f4a,
+  stone: 0xb6b3a6, stoneD: 0x9e9b8e, water: 0x6fc6e8, waterGlow: 0x9fe4ff,
+  dog1: 0xc05540, dog2: 0x8f3d2d, hose: 0x3f8f5f,
+  shed: 0xb0a288, shedD: 0x8d8069,
+  crate: 0xc79a5c, crateD: 0xa07641,
+  trim: 0xf2ecdc, wall: 0xdccaa6, wallLow: 0xb49f78,
+  wood: 0x8d6035, woodD: 0x6e4826, metal: 0x9ba4ac,
+  book1: 0xc4504a, book2: 0x3f7f9f, book3: 0xd8a83c, book4: 0x5f9f5a,
+  winLit: 0xfff6d8, winGlow: 0xffe7a8, sunPatch: 0xfff0c0,
+  hill: 0x8fb182, farHouse: 0xe6d6b4, farRoof: 0xa8674a, farTree: 0x5f8f4f,
+});
+const PAL_NIGHT = Object.assign({}, PAL_BASE, {
+  floorA: 0x4d4459, floorB: 0x423a4d, floorC: 0x574d64,
+  roofA: 0x4d4459, roofB: 0x3d3547,
+  brick: 0x6a4a52, brickD: 0x543a42,
+  parapet: 0x574d64, parapetD: 0x6a5f78,
+  metal: 0x7b8194, metalD: 0x565c6c,
+  tower: 0x8d8598, towerD: 0x6e6780, towerLeg: 0x5f5a70, towerDeck: 0x7a7288,
+  towerGlow: 0xffc478,
+  rope: 0xb8ae9a, cloth1: 0xe8e2d2, cloth2: 0x8fbfe0, cloth3: 0xe0a0b8,
+  dump: 0x3f6b4a, dumpD: 0x325740, awn2: 0xf0ead8,
+  city1: 0x241f38, city2: 0x2c2442, city3: 0x1c1830,
+  winA: 0xffd98a, winB: 0x9fe0ff, glowBand: 0x3a2c52,
+  crate: 0x8d6a4a, crateD: 0x6e5038,
+  wall: 0x574d64, wallLow: 0x463d54, trim: 0x6e6580,
+  wood: 0x6a4a34, woodD: 0x523925,
+  book1: 0xc4504a, book2: 0x3f7f9f, book3: 0xd8a83c, book4: 0x5f9f5a,
+  winLit: 0xffd98a, winGlow: 0xffc86a, sunPatch: 0x3a3358,
+  hill: 0x2a2440, farHouse: 0x2c2442, farRoof: 0x241f38, farTree: 0x241f38,
+  bush: 0x2f4a38, bushD: 0x263c2e, bark: 0x3a2c22, leaf: 0x33553c, leafD: 0x2a4632,
+  stone: 0x6a6478, stoneD: 0x565064, counter: 0x6a6478, counterD: 0x565064,
+  fence: 0x6e6580, fenceD: 0x565064, plank: 0x6a4a34, rail: 0x7b8194, railD: 0x565c6c,
+  shade: 0x5f5a70, lampLit: 0xffd98a, lampGlow: 0xffc86a,
+  pot: 0x4a3a34, plantL: 0x33553c, plantD: 0x2a4632,
+  couch: 0x3f3a52, couchD: 0x332e44, cushion: 0x4a445f,
+  dog1: 0x5f4438, dog2: 0x47332a, hose: 0x2f5a42, shed: 0x4a4458, shedD: 0x3a3546,
+  grass: 0x33553c, grassD: 0x2a4632, dirt: 0x3a3028, stem: 0x33553c,
+  water: 0x4a7f9f, waterGlow: 0x7fc4e8, catpost: 0x5f5a70,
+});
+
+/* the authoring helper — every call appends one chunk record */
+function A() {
+  const C = [];
+  return {
+    C,
+    floor(z0, z1, y, w, xc) { C.push({ t: 'floor', z0, z1, y, w, xc: xc || 0 }); return this; },
+    corr(z0, z1, hw) { C.push({ t: 'corr', z0, z1, hw }); return this; },
+    walls(z0, z1, hw, h, style) { C.push({ t: 'walls', z0, z1, hw, h, style }); return this; },
+    p(k, x, z, a, b, c) { C.push({ t: 'prop', k, x, z, a, b, c }); return this; },
+    /* props that need a real y (or a colour) get their own named op rather
+       than being squeezed through p()'s positional a/b/c */
+    win(x, y, z, w, h) { C.push({ t: 'win', x, y, z, w, h }); return this; },
+    neon(x, y, z, w, h, hex) { C.push({ t: 'neon', x, y, z, w, h, hex }); return this; },
+    awn(x, y, z, w, d, hex) { C.push({ t: 'awn', x, y, z, w, d, hex }); return this; },
+    ac(x, y, z) { C.push({ t: 'ac', x, y, z }); return this; },
+    ant(x, y, z) { C.push({ t: 'ant', x, y, z }); return this; },
+    line(x0, z0, x1, z1, y, n) { C.push({ t: 'line', x0, z0, x1, z1, y, n }); return this; },
+    box(x, y, z, sx, sy, sz, col, kind) { C.push({ t: 'box', x, y, z, sx, sy, sz, col, kind }); return this; },
+    crate(x, y, z, s) { C.push({ t: 'crate', x, y, z, s: s || 0.62 }); return this; },
+    mover(x, y, z, sx, sy, sz, ax, amp, per, col) { C.push({ t: 'mover', x, y, z, sx, sy, sz, ax, amp, per, col }); return this; },
+    e(k, x, y, z, o) { C.push({ t: 'enemy', k, x, y, z, o: o || {} }); return this; },
+    kib(x, y, z) { C.push({ t: 'kib', x, y, z }); return this; },
+    row(x, y, z, dx, dy, dz, n) { C.push({ t: 'row', x, y, z, dx, dy, dz, n }); return this; },
+    arc(x, y, z, tx, tz, n, h) { C.push({ t: 'arc', x, y, z, tx, tz, n, h }); return this; },
+    treat(k, x, y, z) { C.push({ t: 'treat', k, x, y, z }); return this; },
+    mouse(x, y, z) { C.push({ t: 'mouse', x, y, z }); return this; },
+    check(z, x) { C.push({ t: 'check', z, x: x || 0 }); return this; },
+    boss(z, k) { C.push({ t: 'bossz', z, k }); return this; },
+    end(z) { C.push({ t: 'end', z }); return this; },
+  };
+}
+
+/* ══════════════════ ROMP 1 — HOUSE CAT ═════════════════════════════
+   living room → kitchen → hallway.  Teaches, in order: run, jump, gap,
+   scratch a crate, jump-on-furniture, roll under the coffee table, the
+   tail-whip reflect, the cucumber launch.                             */
+function lvlHouse() {
+  const a = A();
+  a.corr(-10, 82, 6.4); a.corr(82, 162, 6.0); a.corr(162, 230, 4.4); a.corr(230, 272, 8.2);
+  a.floor(-8, 33, 0, 13.4); a.floor(37, 82, 0, 13.4);
+  a.floor(82, 121, 0, 12.6); a.floor(127, 162, 0, 12.6);
+  a.floor(162, 218, 0, 9.4); a.floor(224, 231, 0, 9.4);
+  a.floor(231, 272, 0, 17.2);
+  a.walls(-8, 82, 6.4, 3.2, 'living');
+  a.walls(82, 162, 6.0, 3.2, 'kitchen');
+  a.walls(162, 231, 4.4, 2.7, 'hall');
+  a.walls(231, 272, 8.2, 5.8, 'hall');
+
+  /* — the living room: a warm honey room with dust in the window light — */
+  a.p('rug', 0, 10, 7.5, 6.5);
+  a.win(-6.2, 1.9, 8, 2.4, 1.6);
+  a.win(-6.2, 1.9, 22, 2.4, 1.6);
+  a.win(6.2, 1.9, 15, 2.4, 1.6);
+  a.p('cattree', -4.6, 5);
+  a.row(0, 0.35, 3, 0, 0, 1.3, 7);
+  a.p('lamp', 5.2, 6);
+  a.p('plant', -5.4, 13);
+
+  a.p('couch', 0.2, 18, 0);                  // JUMP onto the couch
+  a.arc(-1.2, 0.5, 15.4, 2.6, 5.2, 7, 1.5);
+  a.crate(-4.2, 0, 17, 0.66); a.crate(-4.2, 0.66, 17, 0.62);
+  a.crate(4.4, 0, 19, 0.66);
+  a.kib(-4.2, 1.55, 17);
+
+  a.p('table', 0, 26, 3.0, 1.9, 0.52);       // ROLL UNDER (or jump ON)
+  a.row(-0.9, 0.3, 25.0, 0.9, 0, 0, 3);
+  a.row(0, 0.78, 25.4, 0, 0, 0.7, 3);
+  a.p('shelf', 5.4, 25, -Math.PI / 2, 2.2);
+  a.p('plant', -5.4, 27);
+
+  /* first GAP — two ottomans across it */
+  a.box(-1.5, 0.42, 33.6, 1.5, 0.84, 1.5, PAL_HOUSE.cushion);
+  a.box(1.6, 0.42, 36.0, 1.5, 0.84, 1.5, PAL_HOUSE.cushion);
+  a.arc(-1.5, 1.1, 33.6, 3.1, 2.4, 5, 0.9);
+  a.e('vac', 0, 0, 42, { rng: 3.6 });
+  a.crate(-3.6, 0, 41, 0.66); a.crate(3.6, 0, 44, 0.66);
+  a.row(0, 0.35, 39, 0.0, 0, 1.2, 4);
+
+  /* bookshelf climb → GOLDEN MOUSE 1 */
+  a.crate(-5.0, 0, 50, 0.74);
+  a.crate(-5.0, 0.74, 50.8, 0.70);
+  a.p('shelf', -5.6, 53.4, Math.PI / 2, 2.4);
+  a.box(-5.0, 1.55, 51.9, 1.3, 0.2, 1.3, PAL_HOUSE.wood);
+  a.mouse(-5.4, 2.85, 53.4);
+  a.arc(-4.4, 1.7, 50.4, 0.0, 3.0, 4, 0.8);
+  a.e('vac', 1.8, 0, 52, { rng: 3.0 });
+  a.p('lamp', 5.0, 50);
+
+  /* spray-bottle corner — the tail-whip reflect lesson */
+  a.p('counter', 4.9, 64, 5.0);
+  a.e('spray', 4.6, 1.02, 63, { face: Math.PI });
+  a.crate(-2.0, 0, 62, 0.62); a.crate(-2.0, 0, 66, 0.62);
+  a.row(-3.4, 0.35, 60, 0, 0, 1.4, 6);
+  a.e('yarn', 2.2, 0.32, 70, {});
+  a.treat('milk', 0, 0.55, 74);              // ZOOMIES through the doorway
+  a.row(0, 0.35, 76, 0, 0, 1.1, 5);
+  a.p('doorway', 0, 81);
+  a.check(80, 0);
+
+  /* — the kitchen: tile, counters, a toaster gauntlet — */
+  a.p('counter', -4.6, 90, 9.0);
+  a.row(-4.6, 1.20, 86.5, 0, 0, 1.1, 7);
+  a.e('toast', -4.4, 1.02, 90, {});
+  a.crate(-1.2, 0, 88, 0.66);
+  a.crate(-1.2, 0.66, 88, 0.62);
+  a.p('plant', 5.0, 87);
+
+  a.p('counter', 4.6, 99, 6.0);
+  a.p('fridge', 4.7, 104);
+  a.box(4.0, 1.20, 101.4, 1.2, 0.2, 1.2, PAL_HOUSE.counter);
+  a.mouse(4.7, 2.42, 104);                   // fridge top
+  a.arc(3.4, 1.35, 100.6, 1.2, 3.0, 5, 0.9);
+  a.e('vac', -1.0, 0, 100, { rng: 3.8 });
+  a.row(0, 0.35, 95, 0, 0, 1.2, 5);
+
+  a.e('toast', -3.0, 0, 109, {});
+  a.e('toast', 3.0, 0, 113, {});
+  a.e('toast', -2.0, 0, 117, {});
+  a.crate(0, 0, 111, 0.66); a.crate(0, 0.66, 111, 0.62);
+  a.row(0, 0.35, 107, 0, 0, 1.3, 4);
+  a.arc(-3.0, 0.5, 114, 6.0, 2.0, 6, 1.2);
+  a.treat('fish', 0, 0.5, 119);
+
+  /* the sliding cutting board — one simple mover over a gap */
+  a.mover(0, 0.7, 124, 3.0, 0.22, 2.2, 'x', 3.4, 4.2, PAL_HOUSE.wood);
+  a.arc(-2.6, 1.1, 122, 5.2, 4.0, 6, 1.0);
+  a.e('spray', -5.2, 0, 130, { face: 0.5 });
+  a.e('yarn', 1.6, 0.32, 133, {});
+  a.e('yarn', -1.6, 0.32, 137, {});
+  a.row(0, 0.35, 129, 0, 0, 1.3, 5);
+  a.crate(4.6, 0, 134, 0.66); a.crate(4.6, 0, 137, 0.66);
+
+  /* the CUCUMBER puzzle — startle-launch up to the top shelf */
+  a.e('cuke', 0, 0, 145, {});
+  a.box(0, 3.15, 148.4, 4.4, 0.24, 2.6, PAL_HOUSE.counter);
+  a.row(-1.4, 3.55, 148.4, 0.7, 0, 0, 5);
+  a.treat('fish', 0, 3.7, 149.6);
+  a.p('shelf', -5.6, 152, Math.PI / 2, 2.4);
+  a.e('vac', 2.6, 0, 153, { rng: 2.8 });
+  a.row(0, 0.35, 156, 0, 0, 1.2, 4);
+  a.p('doorway', 0, 161);
+  a.check(160, 0);
+
+  /* — the hallway: narrow, mean, and full of cucumbers — */
+  a.e('vac', -1.4, 0, 168, { rng: 2.4 });
+  a.e('vac', 1.6, 0, 174, { rng: 2.4 });
+  a.row(0, 0.35, 165, 0, 0, 1.2, 6);
+  a.win(-4.3, 1.9, 172, 2.0, 1.4);
+  a.crate(-3.2, 0, 178, 0.62);
+  a.box(-2.8, 0.40, 181, 2.4, 0.80, 1.4, PAL_HOUSE.wood);
+  a.box(0.4, 0.80, 184, 2.4, 0.30, 1.4, PAL_HOUSE.wood);
+  a.box(2.6, 1.25, 187, 2.0, 0.30, 1.4, PAL_HOUSE.wood);
+  a.arc(-2.8, 1.0, 181, 5.4, 6.0, 7, 1.0);
+
+  a.e('cuke', -2.0, 0, 192, {});
+  a.e('cuke', 2.0, 0, 196, {});
+  a.box(2.4, 3.9, 199.5, 3.2, 0.24, 2.4, PAL_HOUSE.counter);
+  a.mouse(2.4, 4.35, 199.5);
+  a.arc(-2.0, 1.2, 192.6, 4.4, 6.4, 6, 1.4);
+  a.e('spray', 3.8, 0, 205, { face: Math.PI });
+  a.e('spray', -3.8, 0, 210, { face: 0 });
+  a.e('vac', 0, 0, 208, { rng: 2.6 });
+  a.row(0, 0.35, 203, 0, 0, 1.3, 6);
+  a.crate(-3.0, 0, 213, 0.62); a.crate(3.0, 0, 214, 0.62);
+  a.treat('fish', 0, 0.5, 216);
+
+  /* last gap, then the door to the boss room */
+  a.box(-1.4, 0.55, 219.4, 1.6, 1.10, 1.6, PAL_HOUSE.cushion);
+  a.box(1.5, 0.55, 222.2, 1.6, 1.10, 1.6, PAL_HOUSE.cushion);
+  a.arc(-1.4, 1.3, 219.4, 2.9, 2.8, 4, 0.8);
+  a.p('doorway', 0, 230);
+
+  /* — the boss room — */
+  a.win(-8.0, 2.2, 244, 3.0, 2.0);
+  a.win(8.0, 2.2, 244, 3.0, 2.0);
+  a.p('shelf', -7.4, 254, Math.PI / 2, 2.4);
+  a.p('shelf', 7.4, 254, -Math.PI / 2, 2.4);
+  a.p('plant', -7.2, 236); a.p('plant', 7.2, 236);
+  a.crate(-6.0, 0, 248, 0.66); a.crate(6.0, 0, 248, 0.66);
+  a.boss(250, 'vac');
+  a.end(268);
+  return { id: 'l1', name: 'HOUSE CAT', sub: 'living room · kitchen · hallway',
+    theme: 'house', pal: PAL_HOUSE, far: 'house', seed: 1101, len: 268, boss: 'vac',
+    chunks: a.C };
+}
+
+/* ══════════════════ ROMP 2 — BACKYARD BLITZ ════════════════════════ */
+function lvlYard() {
+  const a = A();
+  a.corr(-10, 30, 5.6); a.corr(30, 92, 7.4); a.corr(92, 146, 6.0);
+  a.corr(146, 194, 8.4); a.corr(194, 234, 7.4); a.corr(234, 276, 9.0);
+  a.floor(-8, 26, 0.62, 11.2);               // the porch deck
+  a.floor(26, 92, 0, 15.4);
+  a.floor(92, 146, 0, 12.6);
+  a.floor(146, 200, 0, 17.4);
+  a.floor(206, 214, 0, 15.4); a.floor(220, 276, 0, 18.4);
+  a.walls(-8, 26, 5.6, 1.1, 'porch');
+  a.walls(26, 276, 0, 0, 'open');
+
+  /* — the porch — */
+  a.p('deck', 0, -8, 26, 11.2, 0.62);
+  a.row(0, 0.95, -4, 0, 0, 1.3, 8);
+  a.win(-5.2, 2.2, -6, 2.2, 1.6);
+  a.p('plant', -4.2, 4); a.p('plant', 4.2, 4);
+  a.crate(-3.4, 0.62, 10, 0.66); a.crate(3.4, 0.62, 13, 0.66);
+  a.e('spray', 4.3, 0.62, 16, { face: Math.PI });
+  a.arc(-3.0, 1.1, 8, 6.2, 6.0, 7, 1.2);
+  a.box(0, 0.42, 25.4, 4.2, 0.20, 1.2, PAL_YARD.plank);   // the step down
+  a.box(0, 0.20, 26.6, 4.2, 0.20, 1.2, PAL_YARD.plank);
+
+  /* — the garden rows: sprinkler timing lanes — */
+  a.p('planter', -4.6, 38, 12);
+  a.p('planter', 4.6, 38, 12);
+  a.e('sprk', 0, 0, 34, { per: 3.2 });
+  a.e('sprk', 0, 0, 44, { per: 2.6 });
+  a.row(0, 0.35, 30, 0, 0, 1.3, 6);
+  a.row(-4.6, 0.85, 34, 0, 0, 1.2, 6);
+  a.p('bush', -6.8, 36, 1.0); a.p('bush', 6.8, 40, 1.1);
+  a.p('tree', -8.4, 47, 5.5); a.p('tree', 8.6, 43, 5.0);
+  a.p('hose', 3.0, 50);
+
+  a.p('planter', -4.6, 56, 12);
+  a.p('planter', 4.6, 56, 12);
+  a.e('sprk', 0, 0, 54, { per: 2.2 });
+  a.e('dog', 2.4, 0, 60, {});
+  a.e('gnome', -2.6, 0, 58, {});
+  a.arc(-4.6, 0.9, 52, 9.2, 8.0, 8, 1.4);
+  a.treat('milk', 0, 0.5, 64);
+  a.e('crow', -6.0, 2.4, 66, {});
+
+  /* the cucumber garden — three launch puzzles and the shed-top mouse */
+  a.e('cuke', -3.0, 0, 70, {});
+  a.e('cuke', 0.5, 0, 74, {});
+  a.e('cuke', 3.4, 0, 78, {});
+  a.p('shed', 5.4, 80);
+  a.mouse(5.4, 2.92, 80);
+  a.arc(-3.0, 1.2, 70.6, 3.4, 4.0, 5, 1.6);
+  a.arc(0.5, 1.2, 74.6, 3.0, 3.6, 5, 1.6);
+  a.p('bush', -6.6, 76, 1.2);
+  a.e('gnome', -1.4, 0, 84, {});
+  a.e('dog', 1.8, 0, 86, {});
+  a.row(0, 0.35, 88, 0, 0, 1.2, 5);
+  a.p('gate', 0, 91);
+  a.check(90, 0);
+
+  /* — the fence-top balance run — */
+  a.p('fencetop', 0, 96, 140, 1.95);
+  a.p('fencerun', -5.6, 94, 144);
+  a.p('fencerun', 5.6, 94, 144);
+  a.row(0, 2.35, 100, 0, 0, 1.4, 10);
+  a.e('crow', -4.0, 3.2, 104, {});
+  a.e('crow', 4.0, 3.2, 112, {});
+  a.p('tree', -7.4, 120, 6.4);
+  a.mouse(-6.0, 3.85, 119.4);                 // out on a branch
+  a.box(-4.2, 1.95, 119.4, 2.6, 0.18, 1.0, PAL_YARD.plank);
+  a.row(-5.2, 2.3, 119.4, 0.8, 0, 0, 3);
+  a.e('crow', 3.4, 3.4, 126, {});
+  a.row(0, 2.35, 124, 0, 0, 1.4, 8);
+  a.p('bush', -6.2, 108, 1.0); a.p('bush', 6.2, 116, 1.1);
+  a.p('bush', -6.6, 130, 1.2); a.p('bush', 6.6, 134, 1.0);
+  a.treat('fish', 0, 2.35, 136);
+  a.box(0, 1.0, 142.5, 3.2, 0.3, 2.0, PAL_YARD.plank);
+  a.box(0, 0.4, 144.4, 3.2, 0.3, 1.6, PAL_YARD.plank);
+  a.check(146, 0);
+
+  /* — the yappy-dog chase stretch — */
+  a.e('dog', -3.0, 0, 152, {});
+  a.e('dog', 3.2, 0, 158, {});
+  a.e('dog', -1.0, 0, 164, {});
+  a.e('gnome', 2.0, 0, 154, {});
+  a.e('gnome', -2.2, 0, 162, {});
+  a.treat('milk', 0, 0.5, 150);
+  a.row(0, 0.35, 148, 0, 0, 1.2, 6);
+  a.arc(-4.0, 0.5, 156, 8.0, 6.0, 8, 1.6);
+  a.p('tree', -9.6, 160, 6.0); a.p('tree', 9.8, 166, 5.6);
+  a.p('bush', -7.4, 154, 1.2); a.p('bush', 7.4, 170, 1.3);
+
+  a.p('birdbath', 0, 175);                    // bounce off the rim
+  a.arc(0, 1.2, 176.4, 0, 6.0, 6, 2.6);
+  a.e('dog', 3.6, 0, 180, {});
+  a.e('crow', -5.0, 3.0, 182, {});
+  a.p('hose', -4.0, 186);
+  a.row(0, 0.35, 188, 0, 0, 1.3, 6);
+  a.e('sprk', 0, 0, 192, { per: 2.0 });
+
+  /* — the park edge: two creek gaps and a last sprinkler lane — */
+  a.box(-1.8, 0.30, 202.0, 1.8, 0.60, 1.8, PAL_YARD.stone);
+  a.box(1.9, 0.30, 204.4, 1.8, 0.60, 1.8, PAL_YARD.stone);
+  a.arc(-1.8, 1.0, 202.0, 3.7, 2.4, 5, 0.9);
+  a.e('sprk', 0, 0, 210, { per: 1.8 });
+  a.e('dog', -2.6, 0, 212, {});
+  a.box(-2.0, 0.30, 216.0, 1.8, 0.60, 1.8, PAL_YARD.stone);
+  a.box(1.6, 0.30, 218.6, 1.8, 0.60, 1.8, PAL_YARD.stone);
+  a.arc(-2.0, 1.0, 216.0, 3.6, 2.6, 5, 0.9);
+  a.p('tree', -9.0, 222, 6.6); a.p('tree', 9.2, 226, 6.2);
+  a.p('doghouse', 5.6, 226, Math.PI);
+  a.mouse(7.8, 0.45, 227.6);                  // behind the doghouse
+  a.e('crow', 0, 3.2, 228, {});
+  a.row(0, 0.35, 224, 0, 0, 1.3, 6);
+  a.treat('fish', 0, 0.5, 230);
+  a.p('gate', 0, 233);
+
+  /* — Rex's yard — */
+  a.p('doghouse', 0, 252, 0);   // door faces the cat                 // the trampoline roof
+  a.p('tree', -10.2, 244, 6.8); a.p('tree', 10.4, 244, 6.4);
+  a.p('bush', -8.6, 258, 1.4); a.p('bush', 8.6, 258, 1.4);
+  a.p('fencerun', -9.8, 236, 274);
+  a.p('fencerun', 9.8, 236, 274);
+  a.crate(-6.4, 0, 242, 0.66); a.crate(6.4, 0, 242, 0.66);
+  a.boss(256, 'rex');
+  a.end(272);
+  return { id: 'l2', name: 'BACKYARD BLITZ', sub: 'porch · garden · park edge',
+    theme: 'yard', pal: PAL_YARD, far: 'hill', seed: 2202, len: 272, boss: 'rex',
+    chunks: a.C };
+}
+
+/* ══════════════════ ROMP 3 — NIGHT ON THE TILES ════════════════════
+   The showcase.  Indigo night, ~6 neon glows, a lit-window city vista, and
+   the water tower at the end of it.                                     */
+function lvlNight() {
+  const a = A();
+  a.corr(-10, 64, 6.6); a.corr(64, 120, 7.4); a.corr(120, 178, 6.4);
+  a.corr(178, 236, 7.6); a.corr(236, 280, 9.4);
+  a.floor(-8, 22, 0, 13.4);
+  a.floor(26, 46, 1.2, 12.4);
+  a.floor(50, 64, 2.4, 12.4);
+  a.floor(64, 100, 2.4, 14.4);
+  a.floor(106, 120, 2.4, 14.4);
+  a.floor(120, 152, 1.2, 13.4);
+  a.floor(158, 178, 1.2, 13.4);
+  a.floor(178, 212, 0, 15.4);
+  a.floor(218, 236, 0, 15.4);
+  a.floor(236, 280, 0, 19.4);
+  a.walls(-8, 280, 0, 0, 'roof');
+
+  /* — the rooftops — */
+  a.p('parapet', -6.6, -8, 22); a.p('parapet', 6.6, -8, 22);
+  a.row(0, 0.35, -4, 0, 0, 1.3, 7);
+  a.p('chimney', -4.4, 8, 1.8);
+  a.p('chimney', 4.4, 14, 2.0);
+  a.ac(-3.0, 0, 6);
+  a.e('coon', 3.4, 0, 12, {});
+  a.crate(-2.0, 0, 16, 0.66); a.crate(-2.0, 0.66, 16, 0.62);
+  a.arc(-2.6, 0.5, 9, 5.4, 4.0, 6, 1.2);
+  a.neon(-7.2, 3.4, 18, 2.6, 1.4, 0xff5fa8);
+
+  /* step up a level — chimney gap between */
+  a.box(-1.0, 0.6, 23.6, 2.2, 1.2, 1.8, PAL_NIGHT.brick);
+  a.box(1.4, 1.0, 25.4, 2.2, 2.0, 1.8, PAL_NIGHT.brick);
+  a.arc(-1.0, 1.4, 23.6, 2.4, 2.0, 4, 0.9);
+  a.p('parapet', -6.1, 26, 46); a.p('parapet', 6.1, 26, 46);
+  a.p('chimney', -3.8, 32, 2.2);
+  a.mouse(-3.8, 3.75, 32);                     // inside the chimney
+  a.crate(-3.8, 1.2, 29.6, 0.7);
+  a.box(-2.4, 2.2, 31.0, 1.6, 0.2, 1.4, PAL_NIGHT.metal);
+  a.e('vent', 3.6, 1.2, 34, { per: 2.0, amp: 1 });
+  a.e('coon', -2.2, 1.2, 38, {});
+  a.e('zap', 0, 1.2, 42, { per: 1.5 });
+  a.row(0, 1.55, 36, 0, 0, 1.3, 6);
+  a.ac(4.2, 1.2, 40);
+  a.e('pigeon', -1.2, 1.35, 44, { ph: 0.2 });
+  a.e('pigeon', -0.4, 1.35, 44.6, { ph: 1.1 });
+  a.e('pigeon', 0.6, 1.35, 44.2, { ph: 2.4 });
+  a.e('pigeon', 1.4, 1.35, 45.0, { ph: 3.6 });
+  a.e('pigeon', -0.2, 1.35, 45.4, { ph: 4.9 });
+
+  a.box(-1.2, 1.8, 47.4, 2.2, 1.2, 1.8, PAL_NIGHT.brick);
+  a.box(1.6, 2.2, 49.2, 2.2, 2.0, 1.8, PAL_NIGHT.brick);
+  a.arc(-1.2, 2.6, 47.4, 2.8, 2.0, 4, 0.9);
+  a.p('parapet', -6.1, 50, 64); a.p('parapet', 6.1, 50, 64);
+  a.ant(-4.6, 2.4, 54);
+  a.e('coon', 3.0, 2.4, 56, {});
+  a.treat('fish', 0, 2.9, 58);
+  a.row(0, 2.75, 52, 0, 0, 1.3, 6);
+  a.check(62, 0);
+
+  /* — the clothesline quarter: pulleys, awnings, neon — */
+  a.p('clothespole', -5.6, 66, 4.0);
+  a.p('clothespole', 5.6, 66, 4.0);
+  a.line(-5.6, 66, 5.6, 66, 6.0, 4);
+  a.mover(0, 4.3, 70, 2.2, 0.20, 2.0, 'x', 4.2, 5.0, PAL_NIGHT.metal);
+  a.box(-4.6, 3.3, 68, 2.2, 0.22, 2.0, PAL_NIGHT.metal);
+  a.box(4.6, 3.3, 72, 2.2, 0.22, 2.0, PAL_NIGHT.metal);
+  a.arc(-4.6, 3.8, 68, 9.2, 4.0, 8, 1.2);
+  a.neon(7.0, 4.6, 74, 3.0, 1.6, 0x5fe8ff);
+  a.awn(-4.0, 4.0, 78, 3.4, 2.2, 0xff7a5a);
+  a.awn(4.0, 4.0, 84, 3.4, 2.2, 0x5fe8ff);
+  a.arc(-4.0, 4.4, 79, 8.0, 6.0, 8, 2.2);
+  a.e('coon', 0, 2.4, 82, {});
+  a.e('zap', -3.0, 2.4, 88, { per: 1.4 });
+  a.e('zap', 3.0, 2.4, 92, { per: 1.4, ph: 1.4 });
+  a.row(0, 2.75, 86, 0, 0, 1.2, 6);
+  a.p('chimney', -5.4, 90, 2.4);
+  a.ac(5.4, 2.4, 94);
+  a.e('vent', -4.4, 2.4, 96, { per: 1.8, amp: 1 });
+  a.treat('milk', 0, 2.9, 98);
+  a.p('clothespole', -5.6, 100, 4.2);
+  a.p('clothespole', 5.6, 104, 4.2);
+  a.line(-5.6, 100, 5.6, 104, 6.2, 3);
+  a.box(-2.2, 2.7, 101.6, 2.4, 0.22, 2.0, PAL_NIGHT.metal);
+  a.box(2.0, 2.7, 104.2, 2.4, 0.22, 2.0, PAL_NIGHT.metal);
+  a.arc(-2.2, 3.2, 101.6, 4.2, 2.6, 5, 0.9);
+  a.e('coon', -3.2, 2.4, 110, {});
+  a.neon(-7.2, 4.4, 112, 2.8, 1.5, 0xffb03a);
+  a.row(0, 2.75, 108, 0, 0, 1.3, 6);
+  a.p('parapet', -7.0, 64, 120); a.p('parapet', 7.0, 64, 120);
+  a.check(118, 0);
+
+  /* — the neon alley — */
+  a.box(-1.0, 1.7, 121.4, 2.4, 1.4, 1.8, PAL_NIGHT.brick);
+  a.p('parapet', -6.6, 120, 152); a.p('parapet', 6.6, 120, 152);
+  a.neon(6.8, 3.2, 126, 3.2, 1.8, 0xff5fa8);
+  a.neon(-6.8, 3.4, 134, 3.0, 1.6, 0x5fe8ff);
+  a.e('zap', 0, 1.2, 128, { per: 1.3 });
+  a.e('vent', 4.2, 1.2, 132, { per: 1.6, amp: -1 });
+  a.e('coon', -3.0, 1.2, 136, {});
+  a.e('coon', 3.2, 1.2, 142, {});
+  a.row(0, 1.55, 124, 0, 0, 1.2, 6);
+  a.arc(-3.4, 1.7, 138, 6.8, 5.0, 7, 1.4);
+  a.awn(-4.2, 3.2, 146, 3.4, 2.2, 0xffb03a);
+  a.box(0, 4.3, 149.6, 3.0, 0.22, 2.2, PAL_NIGHT.metal);
+  a.neon(0, 5.6, 150, 3.4, 1.8, 0xff5fa8);
+  a.mouse(0, 6.9, 150);                        // on top of the big sign
+  a.arc(-4.2, 3.6, 147, 4.2, 2.6, 5, 1.4);
+  a.box(-1.4, 1.0, 153.4, 2.2, 2.0, 1.8, PAL_NIGHT.brick);
+  a.box(1.6, 1.0, 156.0, 2.2, 2.0, 1.8, PAL_NIGHT.brick);
+  a.arc(-1.4, 2.4, 153.4, 3.0, 2.6, 5, 0.9);
+  a.p('chimney', -5.2, 162, 2.2);
+  a.e('zap', 2.0, 1.2, 164, { per: 1.2 });
+  a.e('coon', -2.4, 1.2, 168, {});
+  a.ac(5.0, 1.2, 170);
+  a.row(0, 1.55, 160, 0, 0, 1.3, 7);
+  a.treat('fish', 0, 1.7, 172);
+  a.e('pigeon', -0.8, 1.35, 174, { ph: 0.5 });
+  a.e('pigeon', 0.6, 1.35, 174.8, { ph: 2.1 });
+  a.e('pigeon', 1.6, 1.35, 174.2, { ph: 3.9 });
+
+  /* — the water tower approach — */
+  a.box(-1.2, 0.6, 179.0, 2.4, 1.2, 1.8, PAL_NIGHT.brick);
+  a.p('parapet', -7.6, 178, 212); a.p('parapet', 7.6, 178, 212);
+  a.awn(-4.6, 2.6, 184, 3.6, 2.4, 0x5fe8ff);
+  a.awn(4.6, 2.6, 190, 3.6, 2.4, 0xff7a5a);
+  a.arc(-4.6, 3.0, 185, 9.2, 6.0, 8, 2.0);
+  a.e('vent', 0, 0, 188, { per: 1.6, amp: 1 });
+  a.e('coon', -3.6, 0, 194, {});
+  a.e('zap', 2.6, 0, 198, { per: 1.3 });
+  a.p('clothespole', -6.4, 200, 4.0);
+  a.p('clothespole', 6.4, 204, 4.0);
+  a.line(-6.4, 200, 6.4, 204, 5.8, 4);
+  a.row(0, 0.35, 192, 0, 0, 1.3, 7);
+  a.treat('milk', 0, 0.5, 202);
+  a.box(-1.8, 0.4, 213.0, 2.0, 0.8, 1.8, PAL_NIGHT.brick);
+  a.box(1.6, 0.4, 215.6, 2.0, 0.8, 1.8, PAL_NIGHT.brick);
+  a.arc(-1.8, 1.2, 213.0, 3.4, 2.6, 5, 0.9);
+  a.p('dumpster', 6.0, 220, 0);
+  a.mouse(8.0, 0.45, 221.4);                   // behind the dumpster
+  a.e('coon', -3.0, 0, 224, {});
+  a.e('coon', 3.4, 0, 228, {});
+  a.neon(-7.4, 3.0, 226, 3.0, 1.6, 0xffb03a);
+  a.row(0, 0.35, 222, 0, 0, 1.3, 7);
+  a.p('chimney', -6.0, 232, 2.4);
+
+  /* — the Raccoon King's roof — */
+  a.p('watertower', 0, 262);
+  a.p('parapet', -8.8, 236, 278); a.p('parapet', 8.8, 236, 278);
+  a.ac(-6.4, 0, 244); a.ac(6.4, 0, 244);
+  a.ant(-7.6, 0, 252); a.ant(7.6, 0, 252);
+  a.p('dumpster', 0, 268, 0);
+  a.crate(-5.0, 0, 250, 0.66); a.crate(5.0, 0, 250, 0.66);
+  a.neon(-8.6, 3.2, 248, 2.6, 1.5, 0x5fe8ff);
+  a.neon(8.6, 3.2, 248, 2.6, 1.5, 0xff5fa8);
+  a.boss(254, 'coon');
+  a.end(272);
+  return { id: 'l3', name: 'NIGHT ON THE TILES', sub: 'rooftops · clotheslines · neon',
+    theme: 'night', pal: PAL_NIGHT, far: 'city', seed: 3303, len: 272, boss: 'coon',
+    chunks: a.C };
+}
+
+const LEVELS = [lvlHouse(), lvlYard(), lvlNight()];
+
+/* ═══════════════════ the build driver ══════════════════════════════════
+   Walks the chunk data once, emits geometry into per-band MDs, then merges
+   each band into ONE lit mesh.  The bake time is measured and reported
+   through __zoomies.perf so the Pi run can confirm it hides behind the
+   level-intro card (design §8 LAW).                                     */
+let BOSS_SPEC = null;
+
+function emitFloor(o, pal) {
+  const hw = o.w / 2, xc = o.xc || 0;
+  const strip = 0.62;
+  const n = Math.max(1, Math.round(o.w / strip));
+  const segZ = 3.4;
+  for (let i = 0; i < n; i++) {
+    const x0 = xc - hw + i * o.w / n, x1 = xc - hw + (i + 1) * o.w / n;
+    for (let z = o.z0; z < o.z1; z += segZ) {
+      const z1 = Math.min(o.z1, z + segZ);
+      const r = _rnd();
+      const c = r < 0.34 ? pal.floorA : r < 0.67 ? pal.floorB : pal.floorC;
+      FLOORQ(x0, z, x1, z1, o.y, c);
+    }
+  }
+  /* The cut EDGE is what makes a gap read as a gap.  Without a skirt the
+     hole in the floor just shows the pale void plane and a kid walks
+     straight into it — so every slab gets a 1.2 m dark fascia all round. */
+  const sk = 1.2, yb = o.y - sk, ec = pal.floorB;
+  const md = bandMD((o.z0 + o.z1) / 2);
+  for (const zz of [o.z0, o.z1]) {
+    const f = zz === o.z0 ? -1 : 1;
+    pushTri(md, xc - hw, o.y, zz, xc + hw, o.y, zz, xc + hw, yb, zz, ec);
+    pushTri(md, xc - hw, o.y, zz, xc + hw, yb, zz, xc - hw, yb, zz, ec);
+    void f;
+  }
+  for (const xx of [xc - hw, xc + hw]) {
+    const mdz = bandMD((o.z0 + o.z1) / 2);
+    pushTri(mdz, xx, o.y, o.z0, xx, o.y, o.z1, xx, yb, o.z1, ec);
+    pushTri(mdz, xx, o.y, o.z0, xx, yb, o.z1, xx, yb, o.z0, ec);
+  }
+  /* one thick solid under the whole slab: the cat lands on y, and falling
+     off the side is a real fall (checkpoint respawn, one heart) */
+  S(xc, o.y - 1.0, (o.z0 + o.z1) / 2, o.w, 2.0, o.z1 - o.z0, 'floor');
+}
+function emitWalls(o, pal) {
+  if (o.style === 'open' || o.style === 'roof' || o.hw <= 0) return;
+  for (const s of [-1, 1]) {
+    const x = s * (o.hw + 0.35);
+    for (let z = o.z0; z < o.z1; z += 4) {
+      const z1 = Math.min(o.z1, z + 4);
+      G(x, o.h / 2, (z + z1) / 2, 0.7, o.h, z1 - z, pal.wall);
+      G(x - s * 0.34, 0.46, (z + z1) / 2, 0.06, 0.92, z1 - z, pal.wallLow);
+      G(x - s * 0.34, 0.95, (z + z1) / 2, 0.13, 0.12, z1 - z, pal.trim);
+    }
+    S(x, o.h / 2, (o.z0 + o.z1) / 2, 0.7, o.h, o.z1 - o.z0, 'solid');
+  }
+  /* the interior ceiling — one slab, emitted ONCE (not per side) */
+  if (o.style !== 'porch') {
+    WORLD.ceil.push({ z0: o.z0, z1: o.z1, h: o.h });
+    for (let z = o.z0; z < o.z1; z += 8) {
+      const z1 = Math.min(o.z1, z + 8);
+      G(0, o.h + 0.18, (z + z1) / 2, o.hw * 2 + 1.4, 0.36, z1 - z, pal.trim);
+    }
+  }
+}
+function dispatchChunk(o, pal, L) {
+  switch (o.t) {
+    case 'floor': emitFloor(o, pal); break;
+    case 'walls': emitWalls(o, pal); break;
+    case 'corr': WORLD.corridor.push({ z0: o.z0, z1: o.z1, hw: o.hw }); break;
+    case 'box': B(o.x, o.y, o.z, o.sx, o.sy, o.sz, o.col, 0, o.kind || 'solid'); break;
+    case 'crate': propCrate(o.x, o.y, o.z, o.s, pal); break;
+    case 'mover': {
+      const m = vcMesh([vcBox(o.sx, o.sy, o.sz, o.col)]);
+      m.position.set(o.x, o.y, o.z);
+      scene.add(m);
+      const sol = { x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0, kind: 'floor', on: true,
+        cx: o.x, cy: o.y, cz: o.z, sx: o.sx, sy: o.sy, sz: o.sz,
+        mover: true, ax: o.ax, amp: o.amp, per: o.per, bx: o.x, by: o.y, bz: o.z, g: m, vx: 0, vy: 0, vz: 0 };
+      WORLD.movers.push(sol);
+      break;
+    }
+    case 'kib': addKibble(o.x, o.y, o.z); break;
+    case 'row': for (let i = 0; i < o.n; i++) addKibble(o.x + o.dx * i, o.y + o.dy * i, o.z + o.dz * i); break;
+    case 'arc': {
+      for (let i = 0; i < o.n; i++) {
+        const t = o.n === 1 ? 0.5 : i / (o.n - 1);
+        addKibble(o.x + o.tx * t, o.y + Math.sin(t * Math.PI) * o.h, o.z + o.tz * t);
+      }
+      break;
+    }
+    case 'treat': addPick(o.k, o.x, o.y, o.z); break;
+    case 'mouse': addPick('mouse', o.x, o.y, o.z); break;
+    case 'enemy': addEnt(o.k, o.x, o.y, o.z, o.o); break;
+    case 'check': {
+      const g = buildCheckpoint(o.x, 0, o.z);
+      WORLD.checkpoints.push({ x: o.x, y: 0, z: o.z, g, hit: false });
+      GLOW(o.x, 1.7, o.z, 3.0, 0xffd75e, 0.5);
+      break;
+    }
+    case 'bossz': BOSS_SPEC = { z: o.z, k: o.k }; break;
+    case 'end': WORLD.length = o.z; break;
+    case 'win': propWindow(o.x, o.y, o.z, o.w, o.h, pal); break;
+    case 'neon': propNeon(o.x, o.y, o.z, o.w, o.h, o.hex, pal); break;
+    case 'awn': propAwning(o.x, o.y, o.z, o.w, o.d, o.hex, pal); break;
+    case 'ac': propAC(o.x, o.y, o.z, pal); break;
+    case 'ant': propAntenna(o.x, o.y, o.z, pal); break;
+    case 'line': propClothesline(o.x0, o.z0, o.x1, o.z1, o.y, pal, o.n); break;
+    case 'prop': {
+      const x = o.x, z = o.z, A1 = o.a, A2 = o.b, A3 = o.c;
+      switch (o.k) {
+        case 'rug': propRug(x, z, A1, A2, pal); break;
+        case 'couch': propCouch(x, z, A1 || 0, pal); break;
+        case 'table': propTable(x, z, A1, A2, A3, pal); break;
+        case 'shelf': propShelf(x, z, A1 || 0, A2 || 2.2, pal); break;
+        case 'counter': propCounter(x, z, A1, pal); break;
+        case 'fridge': propFridge(x, z, pal); break;
+        case 'lamp': propLamp(x, z, pal); break;
+        case 'plant': propPlant(x, z, pal); break;
+        case 'doorway': propDoorway(x, z, pal); break;
+        case 'cattree': propCatTree(x, z, pal); break;
+        case 'fencerun': propFenceRun(x, z, A1, pal); break;
+        case 'fencetop': propFenceTop(x, z, A1, A2, pal); break;
+        case 'bush': propBush(x, z, A1, pal); break;
+        case 'tree': propTree(x, z, A1, pal); break;
+        case 'planter': propPlanterRow(x, z, A1, pal); break;
+        case 'deck': propDeck(x, z, A1, A2, A3, pal); break;
+        case 'birdbath': propBirdbath(x, z, pal); break;
+        case 'doghouse': propDoghouse(x, z, A1 || 0, pal); break;
+        case 'hose': propHose(x, z, pal); break;
+        case 'shed': propShed(x, z, pal); break;
+        case 'gate': propGate(x, z, pal); break;
+        case 'chimney': propChimney(x, z, A1, pal); break;
+        case 'parapet': propParapet(x, z, A1, 0, pal); break;
+        case 'clothespole': propClothesPole(x, z, A1, pal); break;
+        case 'dumpster': propDumpster(x, z, A1 || 0, pal); break;
+        case 'watertower': propWaterTower(x, z, pal); break;
+      }
+      break;
+    }
+  }
+}
+
+function buildLevel(li) {
+  const t0 = performance.now();
+  clearWorld();
+  clearEntities();
+  const L = LEVELS[li];
+  WORLD.theme = L.theme; WORLD.pal = L.pal;
+  _pal = L.pal;
+  applyTheme(L.theme);
+  _mds = []; _farMD = MD(); _rnd = mkRnd(L.seed);
+  BOSS_SPEC = null;
+  for (let i = 0; i < L.chunks.length; i++) dispatchChunk(L.chunks[i], L.pal, L);
+  /* the dark nothing under the corridor: every gap now reads as a HOLE
+     instead of as a pale patch of sky (2 unlit tris per band) */
+  {
+    const vy = L.theme === 'night' ? -11 : -7;
+    const vc = L.theme === 'night' ? 0x100c22 : L.theme === 'yard' ? 0x33301e : 0x2b1d14;
+    /* into the FOG-LESS far mesh: fogged, the void washed to the same cream
+       as the sky and a hole in the floor read as solid ground */
+    for (let z = -40; z < L.len + 60; z += BAND) {
+      pushTriRaw(_farMD, -40, vy, z, 40, vy, z, 40, vy, z + BAND, vc);
+      pushTriRaw(_farMD, -40, vy, z, 40, vy, z + BAND, -40, vy, z + BAND, vc);
+    }
+  }
+  /* the far backdrop — ONE unlit merged mesh, fog:false */
+  if (L.far === 'city') buildSkyline(L.pal, -60, L.len + 70);
+  else buildFarDay(L.pal, -60, L.len + 70, L.far === 'hill' ? 'hill' : 'house');
+
+  for (let i = 0; i < _mds.length; i++) {
+    if (!_mds[i].p.length) continue;
+    const tris = mdTris(_mds[i]);
+    const m = mdMesh(_mds[i]);
+    scene.add(m);
+    WORLD.bands.push({ z0: i * BAND, z1: (i + 1) * BAND, mesh: m, tris });
+    WORLD.tris += tris;
+  }
+  WORLD.far = mdMesh(_farMD, MAT_FAR);
+  WORLD.far.frustumCulled = false;
+  scene.add(WORLD.far);
+  WORLD.tris += mdTris(_farMD);
+  _mds = null; _farMD = null;
+
+  buildBins();
+  buildKibbleMesh(KIBS.length + 90);
+  if (BOSS_SPEC) spawnBoss(BOSS_SPEC.k, BOSS_SPEC.z);
+  WORLD.bakeMs = performance.now() - t0;
+  return WORLD.bakeMs;
+}
+
+/* z-bucketed collision broadphase: the cat only ever tests two buckets */
+function buildBins() {
+  const nb = Math.ceil((WORLD.length + 90) / BINZ) + 4;
+  WORLD.bins.length = 0;
+  for (let i = 0; i < nb; i++) WORLD.bins.push(null);
+  for (let i = 0; i < WORLD.solids.length; i++) {
+    const s = WORLD.solids[i];
+    const b0 = Math.max(0, Math.floor((s.z0 + 40) / BINZ));
+    const b1 = Math.min(nb - 1, Math.floor((s.z1 + 40) / BINZ));
+    for (let b = b0; b <= b1; b++) {
+      if (!WORLD.bins[b]) WORLD.bins[b] = [];
+      WORLD.bins[b].push(s);
+    }
+  }
+}
+function binAt(z) {
+  const i = Math.floor((z + 40) / BINZ);
+  return (i >= 0 && i < WORLD.bins.length) ? WORLD.bins[i] : null;
+}
+</script>

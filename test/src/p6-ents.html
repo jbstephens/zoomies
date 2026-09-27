@@ -1,0 +1,782 @@
+<script>
+/* ═══════════════════ ZOOMIES! — p6  entities ═══════════════════════════
+   Every enemy is BONK-NOT-DIE (design §4): defeated = dizzy stars + a pop
+   of 3–5 kibble.  Nothing bleeds, nothing dies; dogs end up sitting with
+   their tongue out and, in Rex's case, become friends.
+
+   Meshes are built once at level load and disposed on level clear.  The
+   only things that move every frame are transforms.  Projectiles are a
+   fixed pool of pre-built meshes, so a toaster gauntlet never allocates. */
+
+const ENTS = [];          // enemies + hazards, all level-owned
+const PICKS = [];         // treats + golden mice (kibble is instanced)
+const KIBS = [];          // kibble records, drawn through ONE InstancedMesh
+let kibMesh = null;
+
+/* ── shared little builders ────────────────────────────────────────── */
+function dizzyStars(x, y, z, n) {
+  for (let i = 0; i < (n || 5); i++) {
+    const a = i / (n || 5) * TAU;
+    spark(x + Math.cos(a) * 0.3, y + 0.1, z + Math.sin(a) * 0.3,
+      Math.cos(a) * 1.3, 2.4 + Math.random(), Math.sin(a) * 1.3,
+      0.75, 0.30, 0.02, 1.0, 0.92, 0.45, 4);
+  }
+}
+function kibblePop(x, y, z, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, sp = 1.4 + Math.random() * 2.2;
+    addKibble(x + Math.cos(a) * 0.2, y + 0.3, z + Math.sin(a) * 0.2,
+      Math.cos(a) * sp, 4.2 + Math.random() * 2.4, Math.sin(a) * sp);
+  }
+}
+
+/* ── kibble: the coin.  ONE instanced draw call for the whole level ──── */
+function addKibble(x, y, z, vx, vy, vz) {
+  KIBS.push({ x, y, z, vx: vx || 0, vy: vy || 0, vz: vz || 0,
+    on: true, free: !!vx || !!vy || !!vz, t: Math.random() * TAU, rest: 0, y0: y });
+}
+function buildKibbleMesh(cap) {
+  if (kibMesh) { scene.remove(kibMesh); kibMesh.geometry.dispose(); kibMesh.material.dispose(); kibMesh = null; }
+  const n = Math.max(16, cap);
+  const g = vcPart(new THREE.OctahedronGeometry(0.115, 0), 0xffcc4d);
+  const m = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ vertexColors: true }), n);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.frustumCulled = false;
+  m.count = 0;
+  scene.add(m);
+  kibMesh = m;
+}
+const _kq = new THREE.Quaternion(), _ky = new THREE.Vector3(0, 1, 0);
+function drawKibble(catZ) {
+  if (!kibMesh) return 0;
+  let n = 0;
+  const cap = kibMesh.instanceMatrix.count;
+  for (let i = 0; i < KIBS.length && n < cap; i++) {
+    const k = KIBS[i];
+    if (!k.on) continue;
+    const dz = k.z - catZ;
+    if (dz < -14 || dz > 74) continue;
+    _pv.set(k.x, k.y + Math.sin(k.t) * 0.055, k.z);
+    _kq.setFromAxisAngle(_ky, k.t * 1.6);
+    _sc.set(1, 1, 1);
+    _m4.compose(_pv, _kq, _sc);
+    kibMesh.setMatrixAt(n, _m4);
+    n++;
+  }
+  kibMesh.count = n;
+  kibMesh.instanceMatrix.needsUpdate = true;
+  return n;
+}
+
+/* ── treats + golden mice ──────────────────────────────────────────── */
+function buildFish() {
+  return vcMesh([
+    vcSph(0.19, 8, 6, 0x6fd0e8).scale(1.25, 0.82, 0.62),
+    vcCone(0.14, 0.20, 4, 0x4fb4d0).rotateZ(Math.PI / 2).translate(-0.26, 0, 0),
+    vcSph(0.05, 5, 4, 0x18202a).translate(0.13, 0.05, 0.10),
+    vcSph(0.05, 5, 4, 0x18202a).translate(0.13, 0.05, -0.10),
+    vcBox(0.12, 0.10, 0.02, 0x9be6f4).translate(0.0, 0.14, 0),
+  ]);
+}
+function buildSaucer() {
+  return vcMesh([
+    vcCyl(0.30, 0.20, 0.09, 12, 0xf2f0e6).translate(0, 0.045, 0),
+    vcCyl(0.265, 0.265, 0.02, 12, 0xfdfbf2).translate(0, 0.095, 0),
+    vcCyl(0.33, 0.33, 0.014, 12, 0xffffff).translate(0, 0.104, 0),
+  ]);
+}
+function buildMouse() {
+  return vcMesh([
+    vcSph(0.15, 8, 6, 0xffcf4a).scale(1.35, 0.92, 0.92),
+    vcSph(0.095, 7, 5, 0xffdd74).translate(0.17, 0.03, 0),
+    vcCone(0.062, 0.02, 6, 0xffe9a0).rotateX(Math.PI / 2).translate(-0.02, 0.10, 0.075),
+    vcCone(0.062, 0.02, 6, 0xffe9a0).rotateX(Math.PI / 2).translate(-0.02, 0.10, -0.075),
+    vcSph(0.028, 5, 4, 0x3a2a08).translate(0.245, 0.045, 0.05),
+    vcSph(0.028, 5, 4, 0x3a2a08).translate(0.245, 0.045, -0.05),
+    vcCyl(0.014, 0.020, 0.30, 5, 0xffdd74).rotateZ(Math.PI / 2).rotateY(0.5).translate(-0.28, 0.02, 0.06),
+  ]);
+}
+function addPick(kind, x, y, z) {
+  let m;
+  if (kind === 'fish') m = buildFish();
+  else if (kind === 'milk') m = buildSaucer();
+  else m = buildMouse();
+  m.position.set(x, y, z);
+  scene.add(m);
+  PICKS.push({ k: kind, x, y, z, y0: y, on: true, t: Math.random() * TAU, g: m });
+}
+
+/* ── checkpoint arch + food bowl ───────────────────────────────────── */
+function buildCheckpoint(x, y, z) {
+  const g = new THREE.Group();
+  const post = (sx) => vcMesh([
+    vcCyl(0.10, 0.13, 1.9, 7, 0xd8b06a).translate(0, 0.95, 0),
+    vcSph(0.13, 6, 4, 0xffd75e).translate(0, 1.92, 0),
+  ]);
+  const a = post(-1), b = post(1);
+  a.position.set(-1.7, 0, 0); b.position.set(1.7, 0, 0);
+  const bar = vcMesh([
+    vcBox(3.6, 0.16, 0.20, 0xd8b06a).translate(0, 1.95, 0),
+    vcBox(1.5, 0.42, 0.06, 0xffd75e).translate(0, 1.66, 0.02),
+  ]);
+  const bowl = vcMesh([
+    vcCyl(0.30, 0.22, 0.16, 10, 0xe86a5a).translate(0, 0.08, 0),
+    vcCyl(0.26, 0.26, 0.03, 10, 0xc4a05a).translate(0, 0.155, 0),
+  ]);
+  bowl.position.set(0, 0, 0.45);
+  g.add(a, b, bar, bowl);
+  g.position.set(x, y, z);
+  scene.add(g);
+  return g;
+}
+
+/* ══════════════════════ enemy mesh builders ════════════════════════ */
+function mVac(scale) {
+  const s = scale || 1;
+  const m = vcMesh([
+    vcCyl(0.46 * s, 0.50 * s, 0.26 * s, 12, 0x3d4450).translate(0, 0.13 * s, 0),
+    vcCyl(0.42 * s, 0.44 * s, 0.05 * s, 12, 0x5a6472).translate(0, 0.28 * s, 0),
+    vcCyl(0.16 * s, 0.16 * s, 0.07 * s, 8, 0x8a94a4).translate(0, 0.31 * s, 0),
+    vcBox(0.34 * s, 0.05 * s, 0.05 * s, 0x20262e).translate(0, 0.29 * s, 0.34 * s),
+    vcCyl(0.09 * s, 0.09 * s, 0.05 * s, 8, 0xff5a4a).rotateX(Math.PI / 2).translate(0, 0.20 * s, 0.50 * s),
+    vcBox(0.18 * s, 0.12 * s, 0.03 * s, 0x1a1f26).translate(0, 0.14 * s, 0.50 * s),
+  ]);
+  return m;
+}
+function mSpray() {
+  return vcMesh([
+    vcBox(0.26, 0.42, 0.22, 0x8fd6ec).translate(0, 0.21, 0),
+    vcBox(0.20, 0.10, 0.18, 0x3f6f88).translate(0, 0.47, 0),
+    vcBox(0.09, 0.09, 0.26, 0x3f6f88).translate(0, 0.44, 0.20),
+    vcBox(0.14, 0.16, 0.10, 0x2f5468).translate(0, 0.36, -0.14),
+    vcBox(0.22, 0.10, 0.03, 0xf2f0e2).translate(0, 0.20, 0.12),
+  ]);
+}
+function mToaster() {
+  return vcMesh([
+    vcBox(0.62, 0.42, 0.38, 0xd9dde2).translate(0, 0.21, 0),
+    vcBox(0.66, 0.05, 0.42, 0xa8b0ba).translate(0, 0.43, 0),
+    vcBox(0.20, 0.03, 0.22, 0x20252c).translate(-0.13, 0.45, 0),
+    vcBox(0.20, 0.03, 0.22, 0x20252c).translate(0.13, 0.45, 0),
+    vcBox(0.10, 0.16, 0.06, 0x4a525c).translate(0, 0.20, 0.21),
+    vcCyl(0.055, 0.055, 0.05, 8, 0xff8a4a).rotateX(Math.PI / 2).translate(0.20, 0.22, 0.20),
+  ]);
+}
+function mYarn() {
+  return vcMesh([
+    vcSph(0.30, 9, 7, 0xe8607a),
+    vcCyl(0.02, 0.02, 0.62, 5, 0xf68f9f).rotateZ(0.8).translate(0, 0, 0.16),
+    vcCyl(0.02, 0.02, 0.62, 5, 0xf68f9f).rotateX(0.9).rotateZ(-0.4).translate(0.14, 0, 0),
+    vcCyl(0.02, 0.02, 0.60, 5, 0xcf4b62).rotateZ(-1.2).translate(0, 0.1, -0.14),
+  ]);
+}
+function mCucumber() {
+  return vcMesh([
+    vcCyl(0.115, 0.125, 0.78, 8, 0x5aa832).rotateZ(Math.PI / 2).translate(0, 0.12, 0),
+    vcSph(0.12, 7, 5, 0x6fbc3e).translate(-0.38, 0.12, 0),
+    vcSph(0.115, 7, 5, 0x4f9a2c).translate(0.38, 0.12, 0),
+    vcBox(0.56, 0.02, 0.03, 0x8ed05a).translate(0, 0.235, 0.04),
+    vcBox(0.56, 0.02, 0.03, 0x8ed05a).translate(0, 0.225, -0.05),
+  ]);
+}
+function mSprinkler() {
+  return vcMesh([
+    vcCyl(0.20, 0.24, 0.10, 9, 0x4a5a3c).translate(0, 0.05, 0),
+    vcCyl(0.07, 0.08, 0.30, 7, 0x6f8a52).translate(0, 0.24, 0),
+    vcBox(0.44, 0.07, 0.09, 0x8aa668).translate(0, 0.40, 0),
+    vcCyl(0.035, 0.035, 0.09, 6, 0x9fdcff).rotateZ(Math.PI / 2).translate(0.24, 0.40, 0),
+  ]);
+}
+function mDogBody(big) {
+  const s = big ? 2.3 : 1;
+  return vcMesh([
+    vcBox(0.44 * s, 0.38 * s, 0.66 * s, 0xc8a165).translate(0, 0.40 * s, 0),
+    vcBox(0.40 * s, 0.24 * s, 0.30 * s, 0xe0bd82).translate(0, 0.30 * s, 0.24 * s),
+    vcBox(0.42 * s, 0.30 * s, 0.24 * s, 0xa8854f).translate(0, 0.42 * s, -0.34 * s),
+    vcBox(0.14 * s, 0.30 * s, 0.14 * s, 0xc8a165).translate(-0.15 * s, 0.17 * s, 0.24 * s),
+    vcBox(0.14 * s, 0.30 * s, 0.14 * s, 0xc8a165).translate(0.15 * s, 0.17 * s, 0.24 * s),
+    vcBox(0.15 * s, 0.30 * s, 0.15 * s, 0xa8854f).translate(-0.15 * s, 0.17 * s, -0.28 * s),
+    vcBox(0.15 * s, 0.30 * s, 0.15 * s, 0xa8854f).translate(0.15 * s, 0.17 * s, -0.28 * s),
+    vcCyl(0.05 * s, 0.07 * s, 0.40 * s, 6, 0xd8b378).rotateX(0.8).translate(0, 0.60 * s, -0.48 * s),
+  ]);
+}
+function mDogHead(big) {
+  const s = big ? 2.3 : 1;
+  return vcMesh([
+    vcSph(0.24 * s, 8, 6, 0xd8b378).scale(1, 0.95, 1.05),
+    vcBox(0.20 * s, 0.16 * s, 0.26 * s, 0xe8cd9a).translate(0, -0.07 * s, 0.24 * s),
+    vcSph(0.065 * s, 6, 4, 0x201a14).translate(0, -0.05 * s, 0.38 * s),
+    vcSph(0.06 * s, 6, 4, 0x1a1510).translate(-0.10 * s, 0.09 * s, 0.20 * s),
+    vcSph(0.06 * s, 6, 4, 0x1a1510).translate(0.10 * s, 0.09 * s, 0.20 * s),
+    vcBox(0.09 * s, 0.26 * s, 0.13 * s, 0xa8854f).rotateZ(0.3).translate(-0.21 * s, 0.06 * s, -0.02 * s),
+    vcBox(0.09 * s, 0.26 * s, 0.13 * s, 0xa8854f).rotateZ(-0.3).translate(0.21 * s, 0.06 * s, -0.02 * s),
+    vcBox(0.11 * s, 0.03 * s, 0.19 * s, 0xe8808c).translate(0, -0.14 * s, 0.30 * s),   // tongue
+  ]);
+}
+function mCrow() {
+  return vcMesh([
+    vcSph(0.20, 8, 6, 0x2a2a34).scale(1.0, 0.85, 1.4),
+    vcSph(0.125, 7, 5, 0x34343f).translate(0, 0.13, 0.20),
+    vcCone(0.055, 0.20, 4, 0xe8b23a).rotateX(Math.PI / 2).translate(0, 0.11, 0.36),
+    vcSph(0.030, 5, 4, 0xffe08a).translate(-0.07, 0.17, 0.25),
+    vcSph(0.030, 5, 4, 0xffe08a).translate(0.07, 0.17, 0.25),
+    vcBox(0.46, 0.035, 0.24, 0x1f1f28).translate(-0.30, 0.04, -0.02),
+    vcBox(0.46, 0.035, 0.24, 0x1f1f28).translate(0.30, 0.04, -0.02),
+    vcBox(0.10, 0.03, 0.30, 0x1f1f28).translate(0, 0.02, -0.34),
+  ]);
+}
+function mGnome() {
+  return vcMesh([
+    vcCyl(0.17, 0.21, 0.36, 8, 0x3a6fbf).translate(0, 0.18, 0),
+    vcSph(0.165, 8, 6, 0xf0c49a).translate(0, 0.44, 0),
+    vcCone(0.19, 0.34, 8, 0xd8402e).translate(0, 0.70, 0),
+    vcSph(0.13, 7, 5, 0xf6f0e4).scale(1, 0.9, 0.7).translate(0, 0.33, 0.09),
+    vcSph(0.035, 5, 4, 0xe8907a).translate(0, 0.42, 0.16),
+    vcBox(0.10, 0.10, 0.10, 0x2a5490).translate(-0.20, 0.22, 0.05),
+    vcBox(0.10, 0.10, 0.10, 0x2a5490).translate(0.20, 0.22, 0.05),
+  ]);
+}
+function mPigeon() {
+  return vcMesh([
+    vcSph(0.15, 7, 5, 0x8a94a8).scale(1, 0.88, 1.25),
+    vcSph(0.095, 6, 4, 0x9fa9bc).translate(0, 0.11, 0.15),
+    vcCone(0.038, 0.11, 4, 0xe8a06a).rotateX(Math.PI / 2).translate(0, 0.09, 0.25),
+    vcSph(0.09, 6, 4, 0x5f9fb8).scale(1, 0.7, 0.9).translate(0, 0.02, 0.06),
+    vcBox(0.08, 0.02, 0.20, 0x7a839a).translate(0, 0.0, -0.22),
+  ]);
+}
+function mCoon() {
+  return vcMesh([
+    vcBox(0.40, 0.42, 0.34, 0x6a7080).translate(0, 0.42, 0),
+    vcBox(0.36, 0.20, 0.28, 0x8a90a0).translate(0, 0.28, 0.04),
+    vcSph(0.205, 8, 6, 0x7a8090).translate(0, 0.76, 0.03),
+    vcBox(0.36, 0.11, 0.10, 0x23262e).translate(0, 0.76, 0.19),         // bandit mask
+    vcSph(0.042, 5, 4, 0xffe08a).translate(-0.085, 0.775, 0.235),
+    vcSph(0.042, 5, 4, 0xffe08a).translate(0.085, 0.775, 0.235),
+    vcCone(0.10, 0.14, 4, 0xe8e2d4).rotateX(Math.PI / 2).translate(0, 0.70, 0.24),
+    vcCone(0.085, 0.13, 4, 0x6a7080).translate(-0.12, 0.92, -0.01),
+    vcCone(0.085, 0.13, 4, 0x6a7080).translate(0.12, 0.92, -0.01),
+    vcBox(0.13, 0.26, 0.13, 0x5f6474).translate(-0.20, 0.14, 0),
+    vcBox(0.13, 0.26, 0.13, 0x5f6474).translate(0.20, 0.14, 0),
+    vcCyl(0.075, 0.085, 0.46, 6, 0x4a4f5c).rotateX(0.9).translate(0, 0.44, -0.30),
+    vcCyl(0.080, 0.080, 0.09, 6, 0xd8d2c4).rotateX(0.9).translate(0.0, 0.30, -0.44),
+  ]);
+}
+function mVent() {
+  return vcMesh([
+    vcBox(0.90, 0.50, 0.70, 0x5f6474).translate(0, 0.25, 0),
+    vcBox(0.80, 0.06, 0.60, 0x3f4450).translate(0, 0.52, 0),
+    vcBox(0.20, 0.34, 0.60, 0x8a90a0).translate(0.50, 0.30, 0),
+    vcBox(0.04, 0.26, 0.52, 0xb8c0cc).translate(0.60, 0.30, 0),
+  ]);
+}
+function mZap() {
+  return vcMesh([
+    vcBox(0.24, 1.10, 0.24, 0x3f4450).translate(0, 0.55, 0),
+    vcBox(1.40, 0.24, 0.24, 0x3f4450).translate(0, 1.10, 0),
+    vcCyl(0.09, 0.09, 1.30, 8, 0x8a90a0).rotateZ(Math.PI / 2).translate(0, 1.10, 0),
+  ]);
+}
+
+/* ══════════════════════ projectiles (pooled) ═══════════════════════ */
+const PROJ = [];
+function buildProjPool() {
+  const specs = [['water', 10], ['toast', 8], ['trash', 7]];
+  for (const [k, n] of specs) {
+    for (let i = 0; i < n; i++) {
+      let m;
+      if (k === 'water') {
+        m = vcMesh([
+          vcSph(0.16, 7, 5, 0x9fdcff).scale(1, 1.25, 1),
+          vcSph(0.07, 5, 4, 0xe8f8ff).translate(0.05, 0.08, 0.05),
+        ]);
+      } else if (k === 'toast') {
+        m = vcMesh([
+          vcBox(0.32, 0.30, 0.09, 0xd9a24e),
+          vcBox(0.24, 0.10, 0.10, 0xd9a24e).translate(0, 0.18, 0),
+          vcBox(0.26, 0.24, 0.02, 0xf0c884).translate(0, 0.02, 0.055),
+          vcBox(0.26, 0.24, 0.02, 0xf0c884).translate(0, 0.02, -0.055),
+        ]);
+      } else {
+        m = vcMesh([
+          vcSph(0.26, 7, 5, 0x3a4450).scale(1, 1.15, 1),
+          vcBox(0.16, 0.14, 0.16, 0x2a323c).translate(0, 0.24, 0),
+          vcBox(0.30, 0.03, 0.30, 0x4a5460).translate(0, -0.12, 0),
+        ]);
+      }
+      m.visible = false;
+      scene.add(m);
+      PROJ.push({ k, on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, own: 0, src: null, t: 0, g: m, spin: 0 });
+    }
+  }
+}
+function fireProj(kind, x, y, z, vx, vy, vz, src) {
+  for (const p of PROJ) {
+    if (p.on || p.k !== kind) continue;
+    p.on = true; p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz;
+    p.own = 0; p.src = src || null; p.t = 0; p.spin = Math.random() * TAU;
+    p.g.visible = true;
+    return p;
+  }
+  return null;
+}
+</script>
+<script>
+/* ═══════════════════ ZOOMIES! — p6b  enemy spawn + AI ══════════════════
+   One record shape for every enemy so the sim's collision / bonk / cull
+   loops stay flat and allocation-free.  `hit` is the bonk verb set: which
+   of the cat's four attacks (and the roll / zoomies contact) can pop it.  */
+
+const HAZARD_R = 0.62;          // generic body radius for cat-vs-enemy touch
+
+function addEnt(k, x, y, z, o) {
+  o = o || {};
+  const e = {
+    k, x, y, z, y0: y, x0: x, z0: z,
+    alive: true, dead: false, t: Math.random() * 3, st: 0, stT: 0,
+    vx: 0, vy: 0, vz: 0, face: o.face != null ? o.face : Math.PI,
+    r: o.r || HAZARD_R, h: o.h || 0.7, hurt: o.hurt !== false,
+    bonk: o.bonk !== false, mesm: 0, mesmT: 0, shake: 0,
+    rng: o.rng || 3.0, per: o.per || 2.0, ph: o.ph || 0, amp: o.amp || 0,
+    g: null, g2: null, flash: 0, tip: 0, spinT: 0, dizzy: 0, fired: 0,
+    boss: false, hp: o.hp || 1, sit: 0, launch: o.launch || 0, lane: o.lane || 0,
+  };
+  if (k === 'vac') { e.g = mVac(1); e.r = 0.52; e.h = 0.42; }
+  else if (k === 'spray') { e.g = mSpray(); e.r = 0.30; e.h = 0.58; }
+  else if (k === 'toast') { e.g = mToaster(); e.r = 0.40; e.h = 0.48; }
+  else if (k === 'yarn') { e.g = mYarn(); e.r = 0.32; e.h = 0.6; }
+  else if (k === 'cuke') { e.g = mCucumber(); e.r = 0.44; e.h = 0.3; e.hurt = false; e.bonk = false; }
+  else if (k === 'sprk') { e.g = mSprinkler(); e.r = 0.28; e.h = 0.5; e.hurt = false; e.bonk = false; }
+  else if (k === 'dog') { e.g = mDogBody(false); e.g2 = mDogHead(false); e.g2.position.set(0, 0.52, 0.34); e.g.add(e.g2); e.r = 0.44; e.h = 0.75; }
+  else if (k === 'crow') { e.g = mCrow(); e.r = 0.34; e.h = 0.4; }
+  else if (k === 'gnome') { e.g = mGnome(); e.r = 0.30; e.h = 0.9; e.hurt = false; }
+  else if (k === 'pigeon') { e.g = mPigeon(); e.r = 0.22; e.h = 0.3; e.hurt = false; e.bonk = false; }
+  else if (k === 'coon') { e.g = mCoon(); e.r = 0.42; e.h = 0.95; }
+  else if (k === 'vent') { e.g = mVent(); e.r = 0.5; e.h = 0.55; e.hurt = false; e.bonk = false; }
+  else if (k === 'zap') { e.g = mZap(); e.r = 0.7; e.h = 1.2; e.bonk = false; }
+  if (e.g) {
+    e.g.position.set(x, y, z);
+    e.g.rotation.y = e.face;
+    if (LOOK && FX.shadow && k !== 'pigeon' && k !== 'vent' && k !== 'zap') e.g.castShadow = true;
+    scene.add(e.g);
+  }
+  /* the zapper's live arc is its own emissive bar so it can blink */
+  if (k === 'zap') {
+    const arc = vcMesh([vcCyl(0.13, 0.13, 1.20, 8, 0xaaf0ff).rotateZ(Math.PI / 2)],
+      new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false }));
+    arc.position.set(0, 1.10, 0);
+    e.g.add(arc); e.g2 = arc;
+  }
+  /* the sprinkler's sweeping water arc — a fan of little quads, one mesh */
+  if (k === 'sprk') {
+    const parts = [];
+    for (let i = 0; i < 7; i++) {
+      const d = 0.6 + i * 0.52;
+      parts.push(vcBox(0.16, 0.16, 0.34, 0xa8e4ff).translate(0, 0.42 + Math.sin(i / 7 * Math.PI) * 0.9 - i * 0.05, d));
+    }
+    const arc = vcMesh(parts, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.72, depthWrite: false }));
+    arc.position.set(0, 0, 0);
+    e.g.add(arc); e.g2 = arc;
+  }
+  ENTS.push(e);
+  return e;
+}
+
+function killEnt(e, dizzyOnly) {
+  if (!e.alive) return;
+  e.alive = false;
+  e.dizzy = 1;
+  dizzyStars(e.x, e.y + e.h + 0.2, e.z, 5);
+  kibblePop(e.x, e.y + 0.3, e.z, 3 + (Math.random() * 3 | 0));
+  sfxBonk(e.k);
+  if (e.k === 'dog') { e.sit = 1; }                    // dogs SIT, never die
+  else if (e.k === 'yarn') { e.dead = false; }         // tangled, harmless
+  else if (!dizzyOnly) { e.dead = true; }
+}
+
+/* ── the update: one flat pass, no allocation ─────────────────────────
+   Runs on SIM ticks (fixed dt).  Every enemy is culled by z distance for
+   both AI and draw, so a 250 m level costs the same as a 40 m one.      */
+function updateEnts(dt) {
+  const cz = CAT.z, cx = CAT.x, cy = CAT.y;
+  for (let i = 0; i < ENTS.length; i++) {
+    const e = ENTS[i];
+    const dz = e.z - cz;
+    const near = dz > -22 && dz < 62;
+    if (e.g) e.g.visible = near && !e.dead;
+    if (!near) continue;
+    e.t += dt;
+    if (e.flash > 0) e.flash -= dt;
+
+    /* dizzy settle for bonked-but-present enemies (dogs, tangled yarn) */
+    if (!e.alive) {
+      if (e.k === 'dog') {
+        e.g.rotation.x = smooth(e.g.rotation.x, -0.42, 0.10, dt);
+        e.g.position.y = smooth(e.g.position.y, e.y0 - 0.06, 0.10, dt);
+        if (e.g2) e.g2.rotation.z = Math.sin(e.t * 9) * 0.10;     // happy pant
+      } else if (e.k === 'yarn') {
+        e.g.scale.set(smooth(e.g.scale.x, 1.25, 0.08, dt), smooth(e.g.scale.y, 0.35, 0.08, dt), 1.25);
+        e.g.position.y = e.y0;
+      } else if (e.g) {
+        e.g.position.y = smooth(e.g.position.y, e.y0 - 0.1, 0.08, dt);
+        e.g.rotation.z = smooth(e.g.rotation.z, 1.3, 0.08, dt);
+        e.dizzy -= dt * 0.5;
+        if (e.dizzy <= 0) { e.g.visible = false; e.dead = true; }
+      }
+      continue;
+    }
+
+    /* mesmerized by the P2 laser: chase the dot, hurt nobody */
+    if (e.mesm > 0) {
+      e.mesm -= dt;
+      const tx = LASER.x, tz = LASER.z;
+      const d = Math.hypot(tx - e.x, tz - e.z) || 1;
+      const sp = e.k === 'dog' ? 4.6 : 2.2;
+      e.x += (tx - e.x) / d * sp * dt;
+      e.z += (tz - e.z) / d * sp * dt;
+      e.face = Math.atan2(tx - e.x, tz - e.z);
+      if (e.g) { e.g.position.set(e.x, e.y, e.z); e.g.rotation.y = e.face; }
+      if (e.k === 'dog' && e.g2) e.g2.rotation.x = Math.sin(e.t * 16) * 0.12;
+      continue;
+    }
+
+    switch (e.k) {
+      case 'vac': {
+        /* patrol → telegraph (rattle + red glow) → charge → crash → recover */
+        if (e.st === 0) {
+          e.x = e.x0 + Math.sin(e.t * 1.5 / Math.max(0.4, e.rng) * 2) * e.rng;
+          e.face = Math.cos(e.t * 1.5 / Math.max(0.4, e.rng) * 2) > 0 ? Math.PI / 2 : -Math.PI / 2;
+          if (Math.abs(dz) < 9 && dz > -2 && Math.abs(e.x - cx) < 6.5) { e.st = 1; e.stT = 0.95; sfxVacRev(); }
+        } else if (e.st === 1) {
+          e.stT -= dt; e.shake = 1;
+          e.face = Math.atan2(cx - e.x, cz - e.z);
+          if (e.stT <= 0) {
+            e.st = 2; e.stT = 1.15; e.shake = 0;
+            const d = Math.hypot(cx - e.x, cz - e.z) || 1;
+            e.vx = (cx - e.x) / d * 9.5; e.vz = (cz - e.z) / d * 9.5;
+          }
+        } else if (e.st === 2) {
+          e.stT -= dt;
+          e.x += e.vx * dt; e.z += e.vz * dt;
+          if (Math.abs(e.x - e.x0) > e.rng + 3.4 || e.stT <= 0) { e.st = 3; e.stT = 0.85; sfxThud(0.5); }
+        } else {
+          e.stT -= dt;
+          if (e.stT <= 0) { e.st = 0; e.x0 = e.x; }
+        }
+        if (e.g) {
+          e.g.position.set(e.x + (e.shake ? (Math.random() - 0.5) * 0.06 : 0), e.y, e.z);
+          e.g.rotation.y = e.face;
+          e.g.rotation.z = e.st === 2 ? Math.sin(e.t * 40) * 0.05 : 0;
+        }
+        break;
+      }
+      case 'spray': {
+        if (Math.abs(dz) < 19 && dz > -3) {
+          e.face = Math.atan2(cx - e.x, cz - e.z);
+          e.stT -= dt;
+          if (e.stT <= 0) {
+            e.stT = 2.1;
+            const d = Math.hypot(cx - e.x, cz - e.z) || 1;
+            const sp = 11;
+            fireProj('water', e.x + (cx - e.x) / d * 0.4, e.y + 0.52, e.z + (cz - e.z) / d * 0.4,
+              (cx - e.x) / d * sp, 3.2, (cz - e.z) / d * sp, e);
+            sfxSpray();
+          }
+        }
+        if (e.g) { e.g.rotation.y = e.face; e.g.position.y = e.y + Math.sin(e.t * 3) * 0.012; }
+        break;
+      }
+      case 'toast': {
+        e.stT -= dt;
+        if (e.stT <= 0 && Math.abs(dz) < 24) {
+          e.stT = 1.9;
+          for (let k = 0; k < 2; k++) {
+            fireProj('toast', e.x + (k ? 0.14 : -0.14), e.y + 0.48, e.z,
+              (Math.random() - 0.5) * 1.6, 9.4 + Math.random() * 1.2, -2.2 - Math.random() * 3.2, e);
+          }
+          sfxToastPop();
+          e.flash = 0.22;
+        }
+        if (e.g) e.g.position.y = e.y + (e.flash > 0 ? 0.05 : 0);
+        break;
+      }
+      case 'yarn': {
+        /* rolls toward the cat down the corridor */
+        const d = Math.hypot(cx - e.x, cz - e.z) || 1;
+        if (d < 22) {
+          e.vx = smooth(e.vx, (cx - e.x) / d * 3.4, 0.05, dt);
+          e.vz = smooth(e.vz, (cz - e.z) / d * 3.4, 0.05, dt);
+          e.x += e.vx * dt; e.z += e.vz * dt;
+          if (e.g) {
+            e.g.position.set(e.x, e.y, e.z);
+            e.g.rotation.x += e.vz * dt / 0.30;
+            e.g.rotation.z -= e.vx * dt / 0.30;
+          }
+        }
+        break;
+      }
+      case 'cuke': {
+        if (e.g) e.g.position.y = e.y;
+        break;
+      }
+      case 'sprk': {
+        e.face += dt * (e.per > 0 ? TAU / e.per : 1.4);
+        if (e.g) e.g.rotation.y = e.face;
+        break;
+      }
+      case 'dog': {
+        if (e.st === 0) {
+          /* idle bark + a little hop */
+          if (Math.abs(dz) < 11 && dz > -4) { e.st = 1; e.stT = 0.45; sfxBark(1); }
+          if (e.g) { e.g.position.y = e.y + Math.abs(Math.sin(e.t * 3)) * 0.03; e.g.rotation.y = smooth(e.g.rotation.y, Math.atan2(cx - e.x, cz - e.z), 0.08, dt); }
+        } else if (e.st === 1) {
+          e.stT -= dt;
+          e.face = Math.atan2(cx - e.x, cz - e.z);
+          if (e.g) { e.g.rotation.y = e.face; e.g.position.y = e.y - 0.05; }
+          if (e.stT <= 0) { e.st = 2; e.stT = 1.25; sfxBark(1.15); }
+        } else if (e.st === 2) {
+          e.stT -= dt;
+          const d = Math.hypot(cx - e.x, cz - e.z) || 1;
+          e.x += (cx - e.x) / d * 6.2 * dt;
+          e.z += (cz - e.z) / d * 6.2 * dt;
+          e.face = Math.atan2(cx - e.x, cz - e.z);
+          if (e.g) {
+            e.g.position.set(e.x, e.y + Math.abs(Math.sin(e.t * 22)) * 0.09, e.z);
+            e.g.rotation.y = e.face;
+            if (e.g2) e.g2.rotation.x = Math.sin(e.t * 22) * 0.16;
+          }
+          if (e.stT <= 0) { e.st = 3; e.stT = 1.0; }
+        } else {
+          e.stT -= dt;
+          if (e.g) e.g.position.y = smooth(e.g.position.y, e.y, 0.08, dt);
+          if (e.stT <= 0) e.st = 0;
+        }
+        break;
+      }
+      case 'crow': {
+        if (e.st === 0) {
+          e.y = e.y0 + Math.sin(e.t * 1.6) * 0.05;
+          if (Math.abs(dz) < 13 && dz > 1) { e.st = 1; e.stT = 0.72; sfxCaw(); }
+        } else if (e.st === 1) {
+          e.stT -= dt;
+          e.y = e.y0 + (0.72 - e.stT) * 1.4;
+          if (e.stT <= 0) {
+            e.st = 2; e.stT = 1.5;
+            const d = Math.hypot(cx - e.x, cz - e.z) || 1;
+            e.vx = (cx - e.x) / d * 8.5; e.vz = (cz - e.z) / d * 8.5; e.vy = (cy + 0.3 - e.y) * 1.4;
+          }
+        } else if (e.st === 2) {
+          e.stT -= dt;
+          e.x += e.vx * dt; e.z += e.vz * dt; e.y += e.vy * dt;
+          e.vy += 5.5 * dt;
+          if (e.stT <= 0) { e.st = 3; e.stT = 2.2; }
+        } else {
+          e.stT -= dt;
+          e.x = smooth(e.x, e.x0, 0.05, dt); e.z = smooth(e.z, e.z0, 0.05, dt);
+          e.y = smooth(e.y, e.y0 + 1.0, 0.05, dt);
+          if (e.stT <= 0) { e.st = 0; e.x = e.x0; e.z = e.z0; e.y = e.y0; }
+        }
+        if (e.g) {
+          e.g.position.set(e.x, e.y, e.z);
+          e.g.rotation.y = Math.atan2(e.vx, e.vz) || e.face;
+          const flap = Math.sin(e.t * (e.st === 2 ? 26 : 9)) * (e.st === 0 ? 0.12 : 0.55);
+          e.g.rotation.z = flap;
+        }
+        break;
+      }
+      case 'gnome': {
+        if (e.tip === 0 && Math.abs(dz) < 3.0 && Math.abs(e.x - cx) < 2.4) { e.tip = 0.001; sfxGnome(); }
+        if (e.tip > 0 && e.tip < 1) {
+          e.tip = Math.min(1, e.tip + dt * 1.9);
+          if (e.g) { e.g.rotation.x = e.tip * 1.5; e.g.position.y = e.y - e.tip * 0.1; }
+        }
+        break;
+      }
+      case 'pigeon': {
+        if (e.st === 0) {
+          e.y = e.y0 + Math.sin(e.t * 2.2 + e.ph) * 0.02;
+          if (Math.abs(dz) < 6.5) { e.st = 1; e.stT = 2.4; sfxFlutter(); flockScatter(); }
+        } else {
+          e.stT -= dt;
+          e.y += (5.5 - e.stT * 0.4) * dt;
+          e.x += Math.cos(e.ph * 7.3) * 4.0 * dt;
+          e.z += Math.sin(e.ph * 7.3) * 2.6 * dt + 2.2 * dt;
+          if (e.stT <= 0) { e.dead = true; if (e.g) e.g.visible = false; }
+        }
+        if (e.g) { e.g.position.set(e.x, e.y, e.z); e.g.rotation.z = Math.sin(e.t * (e.st ? 30 : 6)) * (e.st ? 0.6 : 0.08); }
+        break;
+      }
+      case 'coon': {
+        e.face = Math.atan2(cx - e.x, cz - e.z);
+        e.stT -= dt;
+        if (e.stT <= 0 && Math.abs(dz) < 17 && dz > -2) {
+          e.stT = 2.45;
+          const d = Math.hypot(cx - e.x, cz - e.z) || 1;
+          fireProj('trash', e.x, e.y + 0.95, e.z, (cx - e.x) / d * 8.0, 5.4, (cz - e.z) / d * 8.0, e);
+          sfxTrashThrow();
+          e.flash = 0.3;
+        }
+        if (e.g) {
+          e.g.rotation.y = e.face;
+          e.g.position.y = e.y + Math.abs(Math.sin(e.t * 2.4)) * 0.03;
+          e.g.rotation.x = e.flash > 0 ? -0.22 : 0;
+        }
+        break;
+      }
+      case 'vent': {
+        const cyc = (e.t + e.ph) % (e.per * 2);
+        e.st = cyc < e.per ? 1 : 0;
+        if (e.st && e.g) {
+          if ((e.t * 40 | 0) % 3 === 0) {
+            spark(e.x + 0.6, e.y + 0.3 + Math.random() * 0.4, e.z + (Math.random() - 0.5) * 0.6,
+              e.amp * 3.4, 0.8, 0, 0.5, 0.30, 0.02, 0.70, 0.80, 0.95, 0);
+          }
+        }
+        break;
+      }
+      case 'zap': {
+        const cyc = (e.t + e.ph) % (e.per * 2);
+        e.st = cyc < e.per ? 1 : 0;
+        if (e.g2) {
+          e.g2.visible = !!e.st;
+          e.g2.material.opacity = 0.55 + Math.random() * 0.45;
+        }
+        if (e.st && (e.t * 60 | 0) % 7 === 0) sfxZap();
+        break;
+      }
+    }
+  }
+}
+
+/* pigeon scatter: the whole flock leaves at once and the frame flashes
+   pale for a beat — "blocks vision" without a per-frame filter */
+let flashT = 0;
+function flockScatter() {
+  for (const e of ENTS) if (e.k === 'pigeon' && e.st === 0 && Math.abs(e.z - CAT.z) < 14) { e.st = 1; e.stT = 2.4; }
+  flashT = 0.42;
+}
+
+/* ── projectile step: gravity, reflect windows, hits ─────────────────── */
+function updateProj(dt) {
+  for (let i = 0; i < PROJ.length; i++) {
+    const p = PROJ[i];
+    if (!p.on) continue;
+    p.t += dt;
+    p.vy -= (p.k === 'water' ? 13 : p.k === 'toast' ? 17 : 15) * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+    p.spin += dt * (p.k === 'toast' ? 7 : 3);
+    p.g.position.set(p.x, p.y, p.z);
+    p.g.rotation.set(p.spin * 0.7, p.spin, p.spin * 0.4);
+    if (p.y < groundAt(p.x, p.z) - 0.4 || p.t > 6 || p.z < CAT.z - 26 || p.z > CAT.z + 70) {
+      if (p.y < groundAt(p.x, p.z) + 0.2 && p.t < 6) {
+        if (p.k === 'water') sfxSplat(0.5);
+        else if (p.k === 'trash') sfxSplat(0.8);
+        for (let s = 0; s < 4; s++)
+          spark(p.x, p.y + 0.1, p.z, (Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2,
+            0.32, 0.18, 0.02, p.k === 'water' ? 0.6 : 0.5, p.k === 'water' ? 0.85 : 0.42, p.k === 'water' ? 1.0 : 0.30, 8);
+      }
+      p.on = false; p.g.visible = false;
+      continue;
+    }
+    /* a cat-owned (reflected) projectile bonks whatever it reaches */
+    if (p.own === 1) {
+      for (let j = 0; j < ENTS.length; j++) {
+        const e = ENTS[j];
+        if (!e.alive || !e.bonk) continue;
+        if (Math.abs(e.z - p.z) < e.r + 0.5 && Math.abs(e.x - p.x) < e.r + 0.5 &&
+            p.y > e.y - 0.3 && p.y < e.y + e.h + 0.7) {
+          killEnt(e);
+          REFLECT_KILLS++;
+          p.on = false; p.g.visible = false;
+          break;
+        }
+      }
+      if (BOSS && BOSS.alive && p.own === 1) bossProjHit(p);
+    }
+  }
+}
+
+/* ── P2 LASER BUDDY ──────────────────────────────────────────────────
+   No second camera, no second rig: a red dot on the ground, a glow, and a
+   0.6 s hover that mesmerizes.  Sweeping it over kibble collects it into
+   the shared score.  Resting it in front of the cat makes him chirp — zero
+   gameplay effect, pure joy, and it stays (design §7).               */
+const LASER = {
+  on: false, x: 0, y: 0, z: 0, dot: null, hoverE: null, hoverT: 0,
+  chirpT: 0, joinFlashT: 0,
+};
+function buildLaser() {
+  if (LASER.dot) return;
+  const m = vcMesh([vcCyl(0.13, 0.13, 0.01, 12, 0xff2a2a)],
+    new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false }));
+  m.renderOrder = 5;
+  m.visible = false;
+  scene.add(m);
+  LASER.dot = m;
+}
+function laserJoin() {
+  if (LASER.on) return;
+  buildLaser();
+  LASER.on = true;
+  LASER.x = CAT.x; LASER.z = CAT.z + 3.0;
+  LASER.joinFlashT = 1.6;
+  sfxChirp(1.1);
+}
+function laserLeave() {
+  LASER.on = false;
+  if (LASER.dot) LASER.dot.visible = false;
+  for (const e of ENTS) e.mesm = 0;
+}
+function updateLaser(dt, lx, lz) {
+  if (!LASER.on) return;
+  const SP = 9.5;
+  LASER.x += lx * SP * dt;
+  LASER.z += lz * SP * dt;
+  /* always within the camera's view: clamped to the corridor and a window
+     around the cat, so P2 can never lose the dot off-screen */
+  const hw = corrHW(LASER.z);
+  LASER.x = clamp(LASER.x, -hw + 0.4, hw - 0.4);
+  LASER.z = clamp(LASER.z, CAT.z - 7, CAT.z + 26);
+  LASER.y = groundAt(LASER.x, LASER.z) + 0.02;
+  LASER.dot.visible = true;
+  LASER.dot.position.set(LASER.x, LASER.y, LASER.z);
+  const pulse = 1 + Math.sin(simT * 22) * 0.12;
+  LASER.dot.scale.set(pulse, 1, pulse);
+
+  /* hover an enemy 0.6s → mesmerized */
+  let best = null, bd = 1.3;
+  for (const e of ENTS) {
+    if (!e.alive || e.k === 'cuke' || e.k === 'vent' || e.k === 'zap') continue;
+    const d = Math.hypot(e.x - LASER.x, e.z - LASER.z);
+    if (d < bd) { bd = d; best = e; }
+  }
+  if (best && best === LASER.hoverE) {
+    LASER.hoverT += dt;
+    if (LASER.hoverT > 0.6 && best.mesm <= 0) { best.mesm = 4.0; sfxChirp(1.4); }
+  } else { LASER.hoverE = best; LASER.hoverT = 0; }
+
+  /* sweep kibble → shared score */
+  for (let i = 0; i < KIBS.length; i++) {
+    const k = KIBS[i];
+    if (!k.on) continue;
+    if (Math.abs(k.x - LASER.x) < 0.95 && Math.abs(k.z - LASER.z) < 0.95 && Math.abs(k.y - LASER.y) < 1.6) {
+      k.on = false; gainKibble(1, k.x, k.y, k.z);
+    }
+  }
+  /* resting the dot in front of the cat → happy chirp + tail flick */
+  const front = LASER.z - CAT.z;
+  if (front > 0.7 && front < 2.6 && Math.abs(LASER.x - CAT.x) < 1.1 && Math.abs(lx) < 0.2 && Math.abs(lz) < 0.2) {
+    LASER.chirpT += dt;
+    if (LASER.chirpT > 0.8) {
+      LASER.chirpT = -2.4;
+      sfxChirp(1.0);
+      CAT.tailFlick = 1;
+      for (let s = 0; s < 4; s++)
+        spark(CAT.x + (Math.random() - 0.5) * 0.5, CAT.y + 0.9, CAT.z + (Math.random() - 0.5) * 0.5,
+          0, 1.2, 0, 0.6, 0.14, 0.02, 1.0, 0.75, 0.85, 0);
+    }
+  } else if (LASER.chirpT > 0) LASER.chirpT = 0;
+  else LASER.chirpT = Math.min(0, LASER.chirpT + dt);
+}
+let REFLECT_KILLS = 0;
+</script>

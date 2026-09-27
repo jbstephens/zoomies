@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ZOOMIES!</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ZOOMIES!">
+<script src="https://ses.q5labs.co/lib/controller.js"></script>
+<style>
+/* ZOOMIES! — Stephens Arcade. 1280x720 fixed stage, CSS letterbox.
+   HOUSE LAW: no backdrop-filter anywhere. Flat rgba panels only.
+   HOUSE LAW: no canvas shadowBlur (there is no 2D game canvas at all). */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden; background: #0b0710;
+  font-family: "Avenir Next", "Trebuchet MS", Verdana, sans-serif;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none; touch-action: none;
+  color: #fff4e2;
+}
+#stage {
+  position: absolute; left: 50%; top: 50%; width: 1280px; height: 720px;
+  transform: translate(-50%, -50%); transform-origin: 50% 50%;
+  overflow: hidden; background: #0b0710;
+}
+#gl { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; display: block; }
+
+/* ── shared panel / type language ─────────────────────────────────── */
+.pnl {
+  background: rgba(26, 14, 32, 0.74);
+  border: 2px solid rgba(255, 206, 128, 0.30);
+  border-radius: 14px;
+}
+.ttl {
+  font-family: "Avenir Next", "Trebuchet MS", Verdana, sans-serif;
+  font-weight: 800; letter-spacing: 2px;
+}
+.sh { text-shadow: 0 3px 0 rgba(28, 12, 34, 0.9); }
+
+/* ── HUD (PLAY / BOSS) ────────────────────────────────────────────── */
+#hud { position: absolute; inset: 0; pointer-events: none; display: none; }
+#hearts { position: absolute; left: 20px; top: 16px; display: flex; gap: 8px; }
+#hearts .paw { width: 46px; height: 46px; display: block; }
+#hearts .paw.off { opacity: 0.26; }
+#hearts .paw.pop { animation: pawpop 0.35s ease-out; }
+@keyframes pawpop { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
+
+#kibBox {
+  position: absolute; left: 20px; top: 70px; display: flex; align-items: center;
+  gap: 9px; font-size: 30px; font-weight: 800; color: #ffe08a;
+  background: rgba(22, 11, 28, 0.50); padding: 3px 14px 3px 10px; border-radius: 16px;
+  text-shadow: 0 2px 0 rgba(28, 12, 34, 0.9);
+}
+#kibBox .dot {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #fff2b8 0%, #ffcc4d 52%, #d98a1e 100%);
+}
+#kibBox #kibN { min-width: 70px; }
+#kibBar {
+  position: absolute; left: 22px; top: 112px; width: 148px; height: 9px;
+  border-radius: 5px; background: rgba(255, 226, 150, 0.20); overflow: hidden;
+}
+#kibBarF { height: 100%; width: 0%; background: linear-gradient(90deg, #ffd75e, #fff4bd); }
+
+#miceBox { position: absolute; right: 20px; top: 16px; display: flex; gap: 7px; }
+#miceBox .ms { width: 38px; height: 38px; display: block; opacity: 0.22; }
+#miceBox .ms.got { opacity: 1; }
+
+#lvlTag {
+  position: absolute; right: 20px; top: 62px; text-align: right;
+  font-size: 21px; font-weight: 800; letter-spacing: 2px; color: #ffd8a0;
+  background: rgba(22, 11, 28, 0.50); padding: 5px 14px 7px; border-radius: 16px;
+  text-shadow: 0 2px 0 rgba(28, 12, 34, 0.9);
+}
+#lvlTag .tm { display: block; font-size: 26px; color: #fff4e2; letter-spacing: 1px; }
+
+/* boss health — chunky pips, centre-top, never overlaps hearts or mice */
+#bossBar {
+  position: absolute; left: 50%; top: 18px; transform: translateX(-50%);
+  display: none; text-align: center; padding: 7px 20px 9px;
+}
+#bossName { font-size: 21px; font-weight: 800; letter-spacing: 4px; color: #ffcf8a; }
+#bossPips { margin-top: 5px; display: flex; gap: 9px; justify-content: center; }
+#bossPips i {
+  width: 42px; height: 15px; border-radius: 8px; display: block;
+  background: linear-gradient(180deg, #ff8f6a, #d8422f);
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,0.25);
+}
+#bossPips i.gone { background: rgba(255, 210, 170, 0.18); box-shadow: none; }
+#bossHint {
+  margin-top: 4px; font-size: 18px; letter-spacing: 1px; color: #ffe9c4; min-height: 22px;
+}
+
+/* the P2 laser hint + move hints live low-centre, out of the play area */
+#hintLine {
+  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
+  font-size: 19px; letter-spacing: 2px; color: #ffeed0;
+  background: rgba(22, 11, 28, 0.62); padding: 6px 18px; border-radius: 16px;
+  white-space: nowrap; opacity: 0; transition: opacity 0.4s linear;
+}
+#p2Tag {
+  position: absolute; right: 20px; bottom: 20px; font-size: 20px; font-weight: 800;
+  letter-spacing: 2px; color: #ff9d9d;
+  background: rgba(22, 11, 28, 0.62); padding: 5px 14px; border-radius: 14px;
+  opacity: 0; transition: opacity 0.3s linear;
+}
+/* when the injected touch overlay is up, lift the bottom furniture clear of
+   the virtual stick / face buttons (body.tp-on is set on overlay detection) */
+body.tp-on #hintLine { bottom: 176px; }
+body.tp-on #p2Tag { bottom: 176px; }
+
+/* centre banner (checkpoint, treat, boss beat, faint) */
+#banner {
+  position: absolute; left: 0; right: 0; top: 26%; text-align: center;
+  pointer-events: none; opacity: 0; transition: opacity 0.22s linear;
+}
+#bannerMain {
+  font-size: 62px; font-weight: 800; letter-spacing: 4px; color: #ffe08a;
+  text-shadow: 0 4px 0 rgba(28, 12, 34, 0.92);
+}
+#bannerSub { margin-top: 6px; font-size: 26px; color: #fff4e2; text-shadow: 0 3px 0 rgba(28, 12, 34, 0.9); }
+
+/* zoomies-mode speed vignette — a flat radial gradient, NOT a filter */
+#speedVig {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  transition: opacity 0.25s linear;
+  background: radial-gradient(ellipse at center,
+    rgba(255,255,255,0) 38%, rgba(255, 210, 120, 0.16) 72%, rgba(255, 150, 60, 0.34) 100%);
+}
+/* the pigeon-scatter whiteout — "blocks vision for a beat", flat gradient */
+#flashVig {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(ellipse at 50% 55%,
+    rgba(246,248,255,0.92) 0%, rgba(230,238,255,0.55) 45%, rgba(210,222,245,0) 78%);
+}
+/* damage flash */
+#hurtVig {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  transition: opacity 0.18s linear;
+  background: radial-gradient(ellipse at center,
+    rgba(255,0,0,0) 42%, rgba(220, 40, 40, 0.30) 80%, rgba(180, 20, 20, 0.55) 100%);
+}
+
+/* ── full-screen overlays (TITLE / SELECT / INTRO / PAUSE / RESULTS) ── */
+.ov {
+  position: absolute; inset: 0; display: none; align-items: center;
+  justify-content: center; flex-direction: column; text-align: center;
+}
+.ov.on { display: flex; }
+.scrim { background: rgba(14, 7, 20, 0.74); }
+.scrimSoft { background: rgba(14, 7, 20, 0.34); }
+
+/* TITLE */
+#title .logo {
+  font-size: 118px; font-weight: 800; letter-spacing: 9px; line-height: 0.96;
+  color: #ffce5a; text-shadow: 0 7px 0 #b3451f, 0 10px 0 rgba(28, 12, 34, 0.7);
+}
+#title .tag {
+  margin-top: 6px; font-size: 27px; letter-spacing: 6px; color: #ffe9c4;
+  text-shadow: 0 3px 0 rgba(28, 12, 34, 0.9);
+}
+#title .press {
+  margin-top: 40px; font-size: 30px; font-weight: 800; letter-spacing: 3px; color: #fff4e2;
+  text-shadow: 0 3px 0 rgba(28, 12, 34, 0.9);
+  animation: blinky 1.5s ease-in-out infinite;
+}
+@keyframes blinky { 0%,100% { opacity: 1; } 50% { opacity: 0.42; } }
+#title .p2h { margin-top: 18px; font-size: 21px; letter-spacing: 3px; color: #ff9d9d; }
+#title .bestline { margin-top: 26px; font-size: 19px; letter-spacing: 2px; color: rgba(255,238,208,0.72); }
+
+/* LEVEL SELECT — three cards, pad-reachable, the selected one lifts */
+#select .head { font-size: 40px; font-weight: 800; letter-spacing: 6px; color: #ffce5a; text-shadow: 0 4px 0 rgba(28,12,34,0.9); }
+#cards { margin-top: 28px; display: flex; gap: 26px; }
+.card {
+  width: 306px; height: 372px; padding: 16px 16px 18px; text-align: left;
+  display: flex; flex-direction: column;
+  background: rgba(26, 14, 32, 0.80);
+  border: 3px solid rgba(255, 206, 128, 0.26); border-radius: 18px;
+  transform: translateY(0); transition: transform 0.14s ease-out, border-color 0.14s linear;
+}
+.card.sel { border-color: #ffce5a; transform: translateY(-12px); }
+.card.locked { opacity: 0.46; }
+.card .num { font-size: 19px; font-weight: 800; letter-spacing: 3px; color: #ffa968; }
+.card .nm { margin-top: 2px; font-size: 29px; font-weight: 800; letter-spacing: 0.5px;
+  color: #fff4e2; min-height: 74px; line-height: 1.06; display: flex; align-items: flex-start; }
+.card .sub { margin-top: 3px; font-size: 17px; color: rgba(255,238,208,0.74); min-height: 22px; }
+.card .art { margin-top: 10px; width: 274px; height: 104px; border-radius: 12px; display: block; }
+.card .row { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 18px; }
+.card .row .mice { display: flex; gap: 5px; }
+.card .row .mice .ms { width: 24px; height: 24px; opacity: 0.22; }
+.card .row .mice .ms.got { opacity: 1; }
+.card .row .best { color: #ffd75e; font-weight: 800; }
+.card .lockTag { margin-top: auto; padding-top: 8px; font-size: 17px; letter-spacing: 2px;
+  color: #ffb0b0; min-height: 21px; }
+#select .foot { margin-top: 30px; font-size: 21px; letter-spacing: 3px; color: rgba(255,238,208,0.82); }
+
+/* LEVEL INTRO card — also the curtain that hides the level build */
+#intro { background: rgba(10, 5, 14, 0.96); }
+#intro .num { font-size: 23px; font-weight: 800; letter-spacing: 7px; color: #ffa968; }
+#intro .nm { margin-top: 8px; font-size: 76px; font-weight: 800; letter-spacing: 5px; color: #ffce5a; text-shadow: 0 6px 0 #b3451f; }
+#intro .sub { margin-top: 12px; font-size: 25px; letter-spacing: 3px; color: #ffe9c4; }
+#intro .go { margin-top: 34px; font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #fff4e2; }
+
+/* PAUSE */
+#pause .head { font-size: 58px; font-weight: 800; letter-spacing: 8px; color: #ffce5a; text-shadow: 0 5px 0 rgba(28,12,34,0.9); }
+#pmenu { margin-top: 26px; }
+.mrow {
+  font-size: 30px; font-weight: 800; letter-spacing: 3px; color: rgba(255,244,226,0.62);
+  padding: 7px 34px; border-radius: 12px; margin: 3px 0;
+}
+.mrow.sel { color: #fff4e2; background: rgba(255, 206, 128, 0.18); }
+.mrow.sel::before { content: "\1F43E"; margin-right: 12px; font-size: 24px; }
+#pause .keys { margin-top: 28px; font-size: 18px; line-height: 1.55; color: rgba(255,238,208,0.66); }
+
+/* RESULTS */
+#results .head { font-size: 66px; font-weight: 800; letter-spacing: 6px; color: #ffce5a; text-shadow: 0 5px 0 #b3451f; }
+#results .lname { margin-top: 2px; font-size: 26px; letter-spacing: 4px; color: #ffe9c4; }
+#rstats { margin-top: 24px; padding: 18px 44px; }
+#rstats .r { display: flex; justify-content: space-between; gap: 60px; font-size: 27px; padding: 5px 0; }
+#rstats .r .k { color: rgba(255,238,208,0.80); letter-spacing: 2px; }
+#rstats .r .v { color: #ffd75e; font-weight: 800; }
+#rstats .r .v.new::after { content: " NEW!"; color: #8fe07a; font-size: 19px; }
+#rmice { margin-top: 16px; display: flex; gap: 14px; justify-content: center; }
+#rmice .ms { width: 48px; height: 48px; opacity: 0.20; }
+#rmice .ms.got { opacity: 1; }
+#results .unlock { margin-top: 20px; font-size: 25px; font-weight: 800; letter-spacing: 3px; color: #8fe07a; min-height: 30px; }
+#results .foot { margin-top: 26px; font-size: 22px; letter-spacing: 3px; color: rgba(255,238,208,0.82); }
+
+/* GOOD KITTY */
+#kitty { background: rgba(10, 5, 14, 0.70); }
+#kitty .head { font-size: 96px; font-weight: 800; letter-spacing: 8px; color: #ffce5a; text-shadow: 0 7px 0 #b3451f; }
+#kitty .sub { margin-top: 10px; font-size: 27px; letter-spacing: 4px; color: #ffe9c4; }
+#parade { margin-top: 30px; height: 96px; width: 900px; position: relative; overflow: hidden; }
+#parade .ms { position: absolute; width: 74px; height: 74px; top: 11px; }
+#kitty .foot { margin-top: 26px; font-size: 21px; letter-spacing: 3px; color: rgba(255,238,208,0.82); }
+
+/* BOOT */
+#boot .l { font-size: 34px; font-weight: 800; letter-spacing: 6px; color: #ffce5a; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" width="1280" height="720"></canvas>
+
+  <div id="hud">
+    <div id="hearts"></div>
+    <div id="kibBox"><span class="dot"></span><span id="kibN">0</span></div>
+    <div id="kibBar"><div id="kibBarF"></div></div>
+    <div id="miceBox"></div>
+    <div id="lvlTag"><span id="lvlNm">HOUSE CAT</span><span class="tm" id="lvlTm">0:00</span></div>
+    <div id="bossBar" class="pnl">
+      <div id="bossName">MOTHER VACUUM</div>
+      <div id="bossPips"><i></i><i></i><i></i></div>
+      <div id="bossHint"></div>
+    </div>
+    <div id="banner">
+      <div id="bannerMain" class="ttl">NICE!</div>
+      <div id="bannerSub"></div>
+    </div>
+    <div id="hintLine"></div>
+    <div id="p2Tag">P2 LASER ON</div>
+    <div id="speedVig"></div>
+    <div id="flashVig"></div>
+    <div id="hurtVig"></div>
+  </div>
+
+  <div id="boot" class="ov on scrim"><div class="l">ZOOMIES!</div></div>
+
+  <div id="title" class="ov scrimSoft">
+    <div class="logo ttl">ZOOMIES!</div>
+    <div class="tag">A CAT IS LOOSE IN THE HOUSE</div>
+    <div class="press">PRESS <b>&#10005;</b> / SPACE TO START</div>
+    <div class="p2h">P2: PRESS &#10005; ANY TIME FOR THE LASER</div>
+    <div class="bestline" id="titleBest"></div>
+  </div>
+
+  <div id="select" class="ov scrim">
+    <div class="head ttl">PICK A ROMP</div>
+    <div id="cards"></div>
+    <div class="foot">&#9664; &#9654; CHOOSE &nbsp;&nbsp; &#10005; GO &nbsp;&nbsp; &#9711; BACK</div>
+  </div>
+
+  <div id="intro" class="ov">
+    <div class="num" id="introNum">ROMP 1</div>
+    <div class="nm ttl" id="introNm">HOUSE CAT</div>
+    <div class="sub" id="introSub">living room &#183; kitchen &#183; hallway</div>
+    <div class="go" id="introGo">GET READY&#8230;</div>
+  </div>
+
+  <div id="pause" class="ov scrim">
+    <div class="head ttl">PAUSED</div>
+    <div id="pmenu"></div>
+    <div class="keys" id="pauseKeys"></div>
+  </div>
+
+  <div id="results" class="ov scrim">
+    <div class="head ttl" id="rHead">ROMP CLEAR!</div>
+    <div class="lname" id="rName">HOUSE CAT</div>
+    <div id="rstats" class="pnl"></div>
+    <div id="rmice"></div>
+    <div class="unlock" id="rUnlock"></div>
+    <div class="foot">&#10005; CONTINUE</div>
+  </div>
+
+  <div id="kitty" class="ov">
+    <div class="head ttl">GOOD KITTY</div>
+    <div class="sub">every golden mouse you ever found</div>
+    <div id="parade"></div>
+    <div class="foot">&#10005; BACK TO THE ROMPS</div>
+  </div>
+</div>

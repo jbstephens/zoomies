@@ -1,0 +1,429 @@
+<script>
+/* ═══════════════════ ZOOMIES! — p4  the cat ════════════════════════════
+   Chunky low-poly orange tabby, ~800 tris, built the Powder-Peak-skier way:
+   one shared Lambert material, every colour in VERTEX colours, each
+   articulated part merged down to ONE mesh.  13 meshes total (torso, head,
+   eyes, 2 ears, 4 legs, 5 tail segments) + a painted blob shadow.
+
+   All animation is PROCEDURAL part transforms — no skeletal system, no
+   baked clips (design §13 cut list).  That includes the whole idle theater,
+   which is half the charm: 4s sit + paw lick, 9s full groom, 15s lie down +
+   purr, plus a wall-scratch variant and random ear flicks throughout.  Any
+   input cancels on the FIRST frame.                                      */
+
+const CATC = {
+  FUR: 0xdd8a3c, FUR_D: 0xb96c28, FUR_L: 0xeda254, STRIPE: 0x9b5417,
+  BELLY: 0xf7e3c4, PAW: 0xf9ecd4, NOSE: 0xe98fa0, EARIN: 0xeb9fa8,
+  EYE: 0x86dd6e, EYE_D: 0x4f9c46, PUPIL: 0x18131f, GLINT: 0xf4ffe8,
+  WHISK: 0xfbf4e6, COLLAR: 0x3fa8d8, TAG: 0xffd75e, MOUTH: 0x8d4a52,
+};
+
+function buildCat() {
+  const root = new THREE.Group();
+  root.rotation.order = 'YXZ';
+  scene.add(root);
+
+  /* body — the squash & stretch / lean container.  Everything articulated
+     hangs off it so one scale writes the whole cat's squash.             */
+  const body = new THREE.Group();
+  body.rotation.order = 'ZYX';
+  root.add(body);
+
+  /* ── torso: chest, barrel, haunches, cream belly, tabby stripes ───── */
+  const torso = vcMesh([
+    // barrel (slightly tapered front-to-back), y is the back line
+    vcBox(0.34, 0.33, 0.44, CATC.FUR).translate(0, 0.40, -0.04),
+    vcBox(0.37, 0.32, 0.22, CATC.FUR).translate(0, 0.42, 0.20),          // chest
+    vcBox(0.30, 0.16, 0.44, CATC.BELLY).translate(0, 0.28, -0.02),       // cream belly
+    vcBox(0.33, 0.30, 0.20, CATC.FUR_D).translate(0, 0.40, -0.26),       // haunches
+    vcSph(0.19, 7, 5, CATC.FUR).scale(0.92, 0.86, 1.0).translate(0, 0.44, -0.27),
+    // tabby stripes — thin darker slabs across the back, the tell that
+    // this is a TABBY and not a generic orange lump
+    vcBox(0.345, 0.055, 0.055, CATC.STRIPE).translate(0, 0.555, 0.14),
+    vcBox(0.35, 0.055, 0.055, CATC.STRIPE).translate(0, 0.565, 0.02),
+    vcBox(0.345, 0.055, 0.055, CATC.STRIPE).translate(0, 0.56, -0.11),
+    vcBox(0.33, 0.055, 0.05, CATC.STRIPE).translate(0, 0.545, -0.24),
+    // shoulder / neck riser so the head does not float
+    vcBox(0.27, 0.20, 0.16, CATC.FUR_L).translate(0, 0.50, 0.28),
+    // collar + tag (the one splash of non-cat colour; reads at 720p)
+    vcCyl(0.145, 0.145, 0.052, 10, CATC.COLLAR, true).rotateX(0.22).translate(0, 0.505, 0.345),
+    vcSph(0.042, 6, 4, CATC.TAG).translate(0, 0.425, 0.40),
+  ]);
+  body.add(torso);
+
+  /* ── head: big skull, muzzle, pink nose, cheek tufts, whiskers ────── */
+  const headPivot = new THREE.Group();
+  headPivot.rotation.order = 'ZYX';
+  headPivot.position.set(0, 0.60, 0.34);
+  body.add(headPivot);
+
+  const head = vcMesh([
+    vcSph(0.205, 8, 6, CATC.FUR).scale(1.0, 0.94, 0.95),                  // skull
+    vcBox(0.30, 0.09, 0.16, CATC.FUR_L).translate(0, 0.115, 0.02),        // brow band
+    vcBox(0.075, 0.06, 0.055, CATC.STRIPE).translate(-0.06, 0.155, 0.06), // forehead M
+    vcBox(0.075, 0.06, 0.055, CATC.STRIPE).translate(0.06, 0.155, 0.06),
+    vcBox(0.05, 0.075, 0.05, CATC.STRIPE).translate(0, 0.16, 0.02),
+    vcSph(0.115, 7, 5, CATC.BELLY).scale(1.05, 0.72, 0.9).translate(0, -0.055, 0.145), // muzzle
+    vcSph(0.10, 6, 4, CATC.BELLY).scale(1.0, 0.8, 0.8).translate(-0.10, -0.03, 0.10),  // cheek tufts
+    vcSph(0.10, 6, 4, CATC.BELLY).scale(1.0, 0.8, 0.8).translate(0.10, -0.03, 0.10),
+    vcCone(0.042, 0.05, 4, CATC.NOSE).rotateX(Math.PI / 2).translate(0, -0.015, 0.235), // nose
+    vcBox(0.055, 0.016, 0.03, CATC.MOUTH).translate(0, -0.085, 0.215),                  // mouth line
+    vcSph(0.085, 6, 4, CATC.FUR).scale(1.0, 0.7, 0.55).translate(0, -0.135, 0.055),     // chin
+    // whiskers — 3 per side, thin bright slabs, slight fan
+    vcBox(0.20, 0.010, 0.012, CATC.WHISK).rotateY(0.30).rotateZ(0.16).translate(-0.19, -0.02, 0.185),
+    vcBox(0.21, 0.010, 0.012, CATC.WHISK).rotateY(0.30).translate(-0.20, -0.045, 0.195),
+    vcBox(0.19, 0.010, 0.012, CATC.WHISK).rotateY(0.30).rotateZ(-0.15).translate(-0.19, -0.07, 0.19),
+    vcBox(0.20, 0.010, 0.012, CATC.WHISK).rotateY(-0.30).rotateZ(-0.16).translate(0.19, -0.02, 0.185),
+    vcBox(0.21, 0.010, 0.012, CATC.WHISK).rotateY(-0.30).translate(0.20, -0.045, 0.195),
+    vcBox(0.19, 0.010, 0.012, CATC.WHISK).rotateY(-0.30).rotateZ(0.15).translate(0.19, -0.07, 0.19),
+  ]);
+  headPivot.add(head);
+
+  /* eyes are their OWN merged mesh so the blink can scale them without
+     touching the skull — one extra draw call buys a slow blink, and the
+     slow blink is what makes him read as a contented animal. */
+  const eyes = vcMesh([
+    vcSph(0.068, 7, 5, CATC.EYE).scale(1, 1, 0.8).translate(-0.088, 0.035, 0.155),
+    vcSph(0.068, 7, 5, CATC.EYE).scale(1, 1, 0.8).translate(0.088, 0.035, 0.155),
+    vcSph(0.042, 6, 4, CATC.EYE_D).scale(0.55, 1.15, 0.6).translate(-0.088, 0.035, 0.205),
+    vcSph(0.042, 6, 4, CATC.EYE_D).scale(0.55, 1.15, 0.6).translate(0.088, 0.035, 0.205),
+    vcSph(0.030, 6, 4, CATC.PUPIL).scale(0.60, 1.25, 0.6).translate(-0.088, 0.035, 0.222),
+    vcSph(0.030, 6, 4, CATC.PUPIL).scale(0.60, 1.25, 0.6).translate(0.088, 0.035, 0.222),
+    vcSph(0.017, 5, 4, CATC.GLINT).translate(-0.108, 0.068, 0.212),
+    vcSph(0.017, 5, 4, CATC.GLINT).translate(0.108, 0.068, 0.212),
+  ]);
+  headPivot.add(eyes);
+
+  /* ── ears: independent pivots so each can flick on its own timer ──── */
+  function earMesh(side) {
+    return vcMesh([
+      vcCone(0.082, 0.17, 4, CATC.FUR).translate(0, 0.085, 0),
+      vcCone(0.050, 0.11, 4, CATC.EARIN).translate(0, 0.062, 0.022),
+      vcBox(0.09, 0.03, 0.07, CATC.FUR_D).translate(0, 0.005, 0),
+    ]);
+  }
+  const earL = new THREE.Group(), earR = new THREE.Group();
+  earL.rotation.order = 'ZYX'; earR.rotation.order = 'ZYX';
+  earL.position.set(-0.108, 0.155, -0.015); earL.rotation.z = 0.22; earL.rotation.x = -0.10;
+  earR.position.set(0.108, 0.155, -0.015); earR.rotation.z = -0.22; earR.rotation.x = -0.10;
+  earL.add(earMesh(-1)); earR.add(earMesh(1));
+  headPivot.add(earL); headPivot.add(earR);
+
+  /* ── legs: 4 pivots at the hip, geometry spanning y 0 → -0.30 ─────── */
+  function legMesh(front) {
+    const up = front ? 0.16 : 0.17;
+    return vcMesh([
+      vcBox(0.115, up, 0.125, CATC.FUR).translate(0, -up / 2, front ? 0.005 : -0.005),
+      vcBox(0.095, 0.13, 0.10, CATC.FUR_D).rotateX(front ? 0.12 : -0.18).translate(0, -up - 0.055, front ? 0.012 : -0.014),
+      vcBox(0.115, 0.055, 0.145, CATC.PAW).translate(0, -up - 0.13, front ? 0.028 : 0.016),
+      vcBox(0.10, 0.03, 0.035, CATC.STRIPE).translate(0, -0.055, front ? 0.068 : -0.068),
+    ]);
+  }
+  const legFL = new THREE.Group(), legFR = new THREE.Group(),
+        legBL = new THREE.Group(), legBR = new THREE.Group();
+  for (const g of [legFL, legFR, legBL, legBR]) g.rotation.order = 'ZYX';
+  legFL.position.set(-0.125, 0.315, 0.20); legFL.add(legMesh(true));
+  legFR.position.set(0.125, 0.315, 0.20); legFR.add(legMesh(true));
+  legBL.position.set(-0.130, 0.320, -0.20); legBL.add(legMesh(false));
+  legBR.position.set(0.130, 0.320, -0.20); legBR.add(legMesh(false));
+  body.add(legFL, legFR, legBL, legBR);
+
+  /* ── tail: 5 nested segments, a live spring chain, always moving ──── */
+  const tail = [];
+  let parent = body;
+  for (let i = 0; i < 5; i++) {
+    const g = new THREE.Group();
+    g.rotation.order = 'ZYX';
+    g.position.set(0, i === 0 ? 0.50 : 0, i === 0 ? -0.30 : -0.145);
+    const r0 = 0.055 - i * 0.006, r1 = 0.050 - i * 0.006;
+    const segCol = (i % 2 === 0) ? CATC.FUR : CATC.STRIPE;
+    const parts = [vcCyl(r1, r0, 0.15, 6, segCol).rotateX(Math.PI / 2).translate(0, 0, -0.072)];
+    if (i === 4) parts.push(vcSph(r1 * 1.15, 6, 4, CATC.BELLY).translate(0, 0, -0.155));
+    const m = vcMesh(parts);
+    g.add(m);
+    parent.add(g);
+    parent = g;
+    tail.push(g);
+  }
+
+  /* painted blob shadow — the lowfx stand-in for the real 1024 map, and a
+     contact cue even when the map is on (kept subtle then). */
+  const blob = new THREE.Mesh(new THREE.CircleGeometry(0.44, 14),
+    new THREE.MeshBasicMaterial({ color: 0x2a1a12, transparent: true, opacity: 0.34, depthWrite: false }));
+  blob.rotation.x = -Math.PI / 2;
+  blob.renderOrder = 2;
+  scene.add(blob);
+
+  /* LAW: casters are CURATED.  Only the silhouette parts cast — ears, tail
+     and eyes are invisible in a soft 1024 map and every caster is one more
+     draw call in EVERY shadow pass. */
+  if (LOOK && FX.shadow) {
+    torso.castShadow = true;
+    head.castShadow = true;
+    for (const g of [legFL, legFR, legBL, legBR]) g.children[0].castShadow = true;
+  }
+
+  return {
+    root, body, torso, headPivot, head, eyes, earL, earR,
+    legs: [legFL, legFR, legBL, legBR], tail, blob,
+    tris: actorTris(torso) + actorTris(head) + actorTris(eyes) +
+          actorTris(earL.children[0]) + actorTris(earR.children[0]) +
+          actorTris(legFL.children[0]) * 4 + tail.reduce((a, g) => a + actorTris(g.children[0]), 0),
+    /* live pose scratch — every value here is mutated in place, never
+       reallocated (hot path law) */
+    ph: 0,                 // run cycle phase
+    tSpring: [],           // tail spring state, filled below
+    blinkT: 1.6, blinkV: 0,
+    earT: [0.8, 1.9], earV: [0, 0],
+    squash: 0, stretch: 0, twist: 0, lean: 0, leanV: 0,
+  };
+}
+
+const cat = buildCat();
+for (let i = 0; i < 5; i++) cat.tSpring.push({ y: 0, yv: 0, p: 0, pv: 0 });
+cat.root.visible = false;
+
+/* ════════════════════ the pose driver ═══════════════════════════════════
+   Called once per RENDERED frame with the visual dt (the sim is fixed-step;
+   the pose is allowed to be frame-rate-smooth).  Reads CAT (the sim record)
+   and writes only transforms — no allocation, no geometry rebuilds.      */
+
+const IDLE_T = [4.0, 9.0, 15.0];          // sit / groom / lie-down thresholds
+const idleFired = [false, false, false];
+
+function resetIdleFlags() { idleFired[0] = idleFired[1] = idleFired[2] = false; }
+
+function poseCat(dt, now) {
+  const C = CAT;
+  const r = cat.root, b = cat.body;
+
+  r.position.set(C.x, C.y, C.z);
+  r.rotation.y = C.face;
+  r.visible = true;
+
+  /* ── speed-driven run cycle ─────────────────────────────────────── */
+  const sp = Math.hypot(C.vx, C.vz);
+  const spN = Math.min(1, sp / RUN_MAX);
+  if (C.rolling) cat.ph += dt * 22;
+  else if (C.grounded) cat.ph += dt * (4.0 + spN * 13.0);
+  const ph = cat.ph;
+
+  /* squash & stretch springs */
+  cat.squash = Math.max(0, cat.squash - dt * 4.6);
+  cat.stretch = Math.max(0, cat.stretch - dt * 3.4);
+  /* lean into turns — banked, not a snap */
+  const wantLean = clamp(-C.turn * 0.42, -0.42, 0.42);
+  cat.leanV += (wantLean - cat.lean) * 26 * dt;
+  cat.leanV *= Math.pow(0.02, dt);
+  cat.lean += cat.leanV * dt;
+
+  let bodyY = 0, bodyPitch = 0, bodyRoll = cat.lean, bodyYaw = 0;
+  let sx = 1, sy = 1, sz = 1;
+  let headPitch = 0, headYaw = 0, headRoll = 0;
+  const L = cat.legs;
+  let lfl = 0, lfr = 0, lbl = 0, lbr = 0;     // leg swing (rotation.x)
+  let legSplay = 0, legTuck = 0;
+  let earFlat = 0;
+  let tailTargetP = 0.35, tailTargetY = 0, tailCurl = 0, tailStiff = 1;
+  let eyeSquint = 0;
+
+  if (C.fainted) {
+    /* dizzy faint — flat on the side, legs out, stars orbit (spawned in sim) */
+    bodyY = -0.22; bodyRoll = 1.35; bodyPitch = 0.1;
+    lfl = 1.1; lfr = 1.3; lbl = -1.0; lbr = -1.2;
+    legSplay = 0.5; earFlat = 1; eyeSquint = 0.85;
+    tailTargetP = 0.1; tailCurl = 0.5;
+    headRoll = 0.4;
+  } else if (C.rolling) {
+    /* zoomies roll — a cat-shaped ball: legs tucked, ears flat, tail
+       wrapped, the whole body spinning forward */
+    bodyY = -0.10; bodyPitch = ph;
+    sx = 1.10; sy = 0.92; sz = 1.06;
+    legTuck = 1; earFlat = 1;
+    tailCurl = 1; tailStiff = 0.35;
+    headPitch = 0.42; eyeSquint = 0.45;
+  } else if (C.pouncing) {
+    bodyPitch = 0.62; bodyY = 0.02;
+    lfl = -1.25; lfr = -1.25; lbl = 0.95; lbr = 0.95;
+    headPitch = 0.34; earFlat = 0.7; tailTargetP = 1.2; eyeSquint = 0.2;
+  } else if (C.whipT > 0) {
+    /* tail whip — the whole cat pirouettes, tail out straight and stiff */
+    const f = 1 - C.whipT / WHIP_TIME;
+    bodyYaw = f * TAU;
+    lfl = 0.5; lfr = -0.5; lbl = -0.3; lbr = 0.3;
+    tailTargetP = -0.15; tailStiff = 3.2; tailTargetY = 0.4;
+    bodyY = 0.04;
+  } else if (C.scratchT > 0) {
+    /* two-swipe scratch combo, front paws alternating */
+    const f = 1 - C.scratchT / SCRATCH_TIME;
+    const sw = f < 0.5 ? f / 0.5 : (f - 0.5) / 0.5;
+    const arc = Math.sin(sw * Math.PI);
+    if (f < 0.5) { lfr = -2.0 * arc; lfl = 0.25 * arc; }
+    else { lfl = -2.0 * arc; lfr = 0.25 * arc; }
+    bodyPitch = -0.16 * arc; bodyYaw = (f < 0.5 ? 0.22 : -0.22) * arc;
+    headPitch = -0.12; tailTargetP = 0.9; tailStiff = 1.8;
+  } else if (!C.grounded) {
+    /* airborne: stretch up, paws reaching; double jump adds the twist */
+    const rise = clamp(C.vy / 9, -1, 1);
+    sy = 1 + 0.14 * Math.max(0, rise) + cat.stretch * 0.16;
+    sx = sz = 1 - 0.09 * Math.max(0, rise) - cat.stretch * 0.10;
+    bodyPitch = -rise * 0.20;
+    lfl = -0.55 - rise * 0.35; lfr = -0.55 - rise * 0.3;
+    lbl = 0.45 + rise * 0.3; lbr = 0.5 + rise * 0.3;
+    tailTargetP = 0.8 - rise * 0.5;
+    headPitch = -rise * 0.12;
+    if (C.twistT > 0) {
+      const f = 1 - C.twistT / TWIST_TIME;
+      bodyRoll += f * TAU;          // the visible barrel flip
+      legTuck = 0.8 * Math.sin(f * Math.PI);
+      earFlat = 0.6;
+    }
+  } else if (C.idleStage > 0) {
+    /* ── IDLE THEATER ──────────────────────────────────────────────── */
+    const it = C.idleT;
+    if (C.idleWall) {
+      /* within 1m of a wall → stand up and scratch it */
+      const s = it * 3.4;
+      bodyPitch = -0.72; bodyY = 0.10;
+      lfl = -2.1 + Math.sin(s) * 0.55; lfr = -2.1 + Math.sin(s + Math.PI) * 0.55;
+      lbl = 0.10; lbr = 0.10;
+      headPitch = -0.28; tailTargetP = -0.1; tailTargetY = Math.sin(s * 0.5) * 0.3;
+      cat.idleName = 'wall-scratch';
+    } else if (C.idleStage === 1) {
+      /* sit + lick paw */
+      const t = it - IDLE_T[0];
+      bodyPitch = -0.30; bodyY = -0.055;
+      lbl = -1.35; lbr = -1.35; legSplay = 0.16;
+      lfl = 0.04; lfr = 0.04;
+      tailTargetP = 0.20; tailCurl = 0.55; tailStiff = 0.6;
+      /* lick: right paw up to the muzzle, head dips to meet it */
+      const lick = Math.max(0, Math.sin(t * 2.1));
+      lfr = -1.55 * lick + 0.04;
+      headPitch = 0.42 * lick;
+      headRoll = -0.14 * lick;
+      eyeSquint = 0.45 * lick;
+      cat.idleName = 'sit-lick';
+    } else if (C.idleStage === 2) {
+      /* full groom — paw lick AND a face wipe across the cheek */
+      const t = it - IDLE_T[1];
+      bodyPitch = -0.34; bodyY = -0.06;
+      lbl = -1.40; lbr = -1.40; legSplay = 0.18;
+      tailTargetP = 0.12; tailCurl = 0.8; tailStiff = 0.5;
+      const cyc = (t % 2.6) / 2.6;
+      if (cyc < 0.45) {
+        const k = Math.sin(cyc / 0.45 * Math.PI);
+        lfr = -1.7 * k; lfl = 0.05;
+        headPitch = 0.5 * k; headRoll = -0.18 * k; eyeSquint = 0.6 * k;
+      } else {
+        const k = Math.sin((cyc - 0.45) / 0.55 * Math.PI);
+        lfl = -1.9 * k; lfr = 0.05;
+        headRoll = 0.34 * k; headYaw = -0.30 * k; headPitch = 0.26 * k;
+        eyeSquint = 0.7 * k;
+      }
+      cat.idleName = 'groom';
+    } else {
+      /* lie down, tail curl, slow blink, purr */
+      const t = it - IDLE_T[2];
+      const settle = Math.min(1, t / 1.1);
+      bodyY = -0.215 * settle; bodyPitch = -0.05 * settle;
+      sx = 1 + 0.12 * settle; sz = 1 + 0.05 * settle; sy = 1 - 0.13 * settle;
+      lfl = (1.30 + Math.sin(t * 1.0) * 0.05) * settle;
+      lfr = (1.40) * settle;
+      lbl = (-1.05) * settle; lbr = (-1.15) * settle;
+      legSplay = 0.42 * settle;
+      tailTargetP = 0.05; tailCurl = 1.1 * settle; tailStiff = 0.3;
+      headPitch = 0.10 * settle; headRoll = 0.10 * settle;
+      /* the purr breathes the whole body */
+      const breathe = Math.sin(t * 2.3) * 0.012 * settle;
+      sy += breathe; sx -= breathe * 0.5;
+      eyeSquint = 0.55 + 0.42 * Math.max(0, Math.sin(t * 0.55));
+      cat.idleName = 'lie-purr';
+    }
+  } else {
+    /* ── grounded run / walk / stand ──────────────────────────────── */
+    const amp = 0.30 + spN * 0.60;
+    const sw = Math.sin(ph), sw2 = Math.sin(ph + Math.PI);
+    lfl = sw * amp; lbr = sw * amp * 0.9;
+    lfr = sw2 * amp; lbl = sw2 * amp * 0.9;
+    bodyY = Math.abs(Math.sin(ph)) * 0.022 * spN;
+    bodyPitch = -0.06 * spN;
+    sy = 1 - cat.squash * 0.24 + cat.stretch * 0.12;
+    sx = sz = 1 + cat.squash * 0.17 - cat.stretch * 0.08;
+    tailTargetP = 0.35 + spN * 0.45;
+    tailTargetY = Math.sin(ph * 0.5) * 0.22 * (0.3 + spN);
+    headPitch = -0.04 * spN;
+    headYaw = clamp(-C.turn * 0.25, -0.3, 0.3);
+    cat.idleName = 'move';
+  }
+
+  /* the P2 laser's pure-joy beat: he chirps and flicks his tail (design §7 —
+     zero gameplay effect, and it stays) */
+  if (C.tailFlick > 0) {
+    const f = Math.sin((1 - C.tailFlick) * 14);
+    tailTargetY += f * 0.55;
+    tailTargetP += 0.35;
+    headYaw += f * 0.10;
+  }
+  /* zoomies mode: eyes wide, ears back, sparkle handled in the sim */
+  if (C.zoomT > 0) { earFlat = Math.max(earFlat, 0.55); eyeSquint = Math.min(eyeSquint, 0.1); }
+
+  b.position.y = bodyY;
+  b.rotation.set(bodyPitch, bodyYaw, bodyRoll);
+  b.scale.set(sx, sy, sz);
+
+  cat.headPivot.rotation.set(headPitch, headYaw, headRoll);
+
+  /* ── blink + ear flicks: tiny independent timers, always alive ───── */
+  cat.blinkT -= dt;
+  if (cat.blinkT <= 0) { cat.blinkT = 2.2 + Math.random() * 3.4; cat.blinkV = 1; }
+  cat.blinkV = Math.max(0, cat.blinkV - dt * (C.idleStage >= 3 ? 2.6 : 7.5));
+  const lidClose = Math.max(eyeSquint, Math.sin(Math.min(1, cat.blinkV) * Math.PI) * 0.95);
+  cat.eyes.scale.set(1, Math.max(0.06, 1 - lidClose * 0.94), 1);
+  cat.eyes.position.y = -lidClose * 0.008;
+
+  for (let i = 0; i < 2; i++) {
+    cat.earT[i] -= dt;
+    if (cat.earT[i] <= 0) { cat.earT[i] = 1.1 + Math.random() * 3.6; cat.earV[i] = 1; }
+    cat.earV[i] = Math.max(0, cat.earV[i] - dt * 6.0);
+    const flick = Math.sin(Math.min(1, cat.earV[i]) * Math.PI) * 0.42;
+    const g = i === 0 ? cat.earL : cat.earR;
+    const sgn = i === 0 ? 1 : -1;
+    g.rotation.z = sgn * (0.22 + earFlat * 0.55) + sgn * flick * 0.7;
+    g.rotation.x = -0.10 + earFlat * 0.95 + flick * 0.5;
+  }
+
+  /* ── legs ────────────────────────────────────────────────────────── */
+  const swing = [lfl, lfr, lbl, lbr];
+  for (let i = 0; i < 4; i++) {
+    const g = L[i];
+    const sgn = (i === 0 || i === 2) ? -1 : 1;
+    g.rotation.x = swing[i] + legTuck * (i < 2 ? 1.75 : -1.75);
+    g.rotation.z = sgn * legSplay;
+    g.scale.y = 1 - legTuck * 0.35;
+  }
+
+  /* ── tail: a real 5-link spring chain, driven by the body ─────────── */
+  const drive = -C.turn * 0.5 + clamp(C.vy * 0.012, -0.3, 0.3);
+  for (let i = 0; i < 5; i++) {
+    const s = cat.tSpring[i];
+    const k = (46 + i * 5) * tailStiff, d = Math.pow(0.0006 + i * 0.0002, dt);
+    const wantP = (i === 0 ? tailTargetP : tailCurl * 0.46 + tailTargetP * 0.18) - clamp(C.vy * 0.02, -0.4, 0.4) * (i === 0 ? 1 : 0.25);
+    const wantY = (i === 0 ? tailTargetY + drive : tailTargetY * 0.4 + drive * 0.55);
+    s.pv += (wantP - s.p) * k * dt; s.pv *= d; s.p += s.pv * dt;
+    s.yv += (wantY - s.y) * k * dt; s.yv *= d; s.y += s.yv * dt;
+    const g = cat.tail[i];
+    g.rotation.x = clamp(s.p, -1.5, 1.7);
+    g.rotation.y = clamp(s.y, -1.1, 1.1);
+    g.rotation.z = i === 0 ? 0 : Math.sin(now * 2.0 + i) * 0.035;
+  }
+
+  /* ── blob shadow: on under lowfx, a faint contact patch otherwise ─── */
+  const gy = C.shadowY;
+  cat.blob.position.set(C.x, gy + 0.012, C.z);
+  const h = Math.max(0, C.y - gy);
+  const shrink = clamp(1 - h * 0.16, 0.28, 1);
+  cat.blob.scale.set(shrink, shrink, 1);
+  cat.blob.material.opacity = (FX.shadow ? 0.14 : 0.34) * shrink * (C.fainted ? 0.5 : 1);
+  cat.blob.visible = C.y - gy < 7;
+}
+</script>

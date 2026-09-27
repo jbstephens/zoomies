@@ -1,0 +1,871 @@
+<script>
+/* ═══════════════════ ZOOMIES! — p8  the sim ════════════════════════════
+   Fixed-timestep character sim (LAW: a frame is not game time — the whole
+   sim runs at SIM_HZ off an accumulator and the harness waits on SIM TICKS
+   through __zoomies, never on rAF counts).
+
+   Screen-space direction LAW, worked out rather than guessed: the camera
+   sits BEHIND the cat looking down-corridor at +Z, with up = +Y.  A three.js
+   camera looks along its local -Z, so its local -Z is world +Z, meaning its
+   local +X is world **-X**.  Screen-right is therefore world -X, and stick
+   right must push the cat toward -X.  SCREEN_RIGHT_X encodes that once, and
+   the harness asserts it THROUGH THE LIVE CAMERA by projecting the cat.  */
+
+const SCREEN_RIGHT_X = -1;
+
+const SIM_HZ = 120, DT = 1 / SIM_HZ;
+let simT = 0, simTicks = 0;
+
+/* ── tunables (design starting values, moved during feel passes) ────── */
+const RUN_MAX = 7.0;
+const ACC_G = 44, DEC_G = 38, ACC_A = 20;
+const GRAV = 26, GRAV_HOLD = 11.7, GRAV_CAP = 30;
+const JUMP_V = 8.6, JUMP_V2 = 7.7, JUMP_HOLD_MAX = 0.26;
+const COYOTE = 0.12, BUFFER = 0.15;
+const ROLL_MULT = 1.60, ROLL_H = 0.42;
+const POUNCE_V = -20, POUNCE_AOE = 2.2;
+const SCRATCH_TIME = 0.40, SCRATCH_R = 0.78;
+const WHIP_TIME = 0.60, WHIP_CD = 0.24, WHIP_R = 1.70, REFLECT_R = 2.45;
+const TWIST_TIME = 0.42;
+const CAT_R = 0.34, CAT_H = 0.80;
+const INVULN = 1.20, MERCY = 1.00;
+const ZOOM_TIME = 6.0, ZOOM_SPEED = 1.85;
+const CUKE_V = 16.0;
+const KIB_MAGNET = 1.95, KIB_TAKE = 0.95, KIB_PER_HEART = 100;
+
+const CAT = {
+  x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, face: 0, turn: 0,
+  grounded: true, coyote: 0, buffer: 0, jumps: 0, holdJump: false, jumpHoldT: 0,
+  rolling: false, pouncing: false, scratchT: 0, scratchHit: 0, whipT: 0, whipCD: 0, twistT: 0,
+  hearts: 3, invuln: 0, fainted: false, faintT: 0,
+  zoomT: 0, kibble: 0, kibSince: 0, mice: [false, false, false],
+  idleT: 0, idleStage: 0, idleWall: false, tailFlick: 0,
+  cp: { x: 0, y: 0, z: 0 }, shadowY: 0, launchCD: 0, stepT: 0,
+  onMover: null, bestZ: 0, deaths: 0, jumpsMade: 0, cukeLaunches: 0,
+};
+
+function clearEntities() {
+  for (const e of ENTS) if (e.g) { scene.remove(e.g); disposeTree(e.g); }
+  ENTS.length = 0;
+  for (const p of PICKS) { scene.remove(p.g); p.g.geometry.dispose(); }
+  PICKS.length = 0;
+  KIBS.length = 0;
+  for (const p of PROJ) { p.on = false; p.g.visible = false; }
+  clearBoss();
+  REFLECT_KILLS = 0;
+  laserLeave();
+  for (const p of [sparks, bits]) for (const o of p.a) o.on = false;
+}
+
+/* ── world queries ─────────────────────────────────────────────────── */
+function corrHW(z) {
+  const C = WORLD.corridor;
+  for (let i = 0; i < C.length; i++) if (z >= C[i].z0 && z < C[i].z1) return C[i].hw;
+  return C.length ? C[C.length - 1].hw : 7;
+}
+function groundAt(x, z) {
+  let best = -60;
+  const b = binAt(z);
+  if (b) {
+    for (let i = 0; i < b.length; i++) {
+      const s = b[i];
+      if (!s.on) continue;
+      if (x < s.x0 - 0.05 || x > s.x1 + 0.05 || z < s.z0 - 0.05 || z > s.z1 + 0.05) continue;
+      if (s.y1 > best) best = s.y1;
+    }
+  }
+  for (let i = 0; i < WORLD.movers.length; i++) {
+    const s = WORLD.movers[i];
+    if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) continue;
+    if (s.y1 > best) best = s.y1;
+  }
+  return best;
+}
+/* the walkable height under a point, but never above the cat's own head —
+   used for the blob shadow and for the camera's climb read */
+function groundUnder(x, z, y) {
+  let best = -60;
+  const b = binAt(z);
+  if (b) {
+    for (let i = 0; i < b.length; i++) {
+      const s = b[i];
+      if (!s.on) continue;
+      if (x < s.x0 - 0.05 || x > s.x1 + 0.05 || z < s.z0 - 0.05 || z > s.z1 + 0.05) continue;
+      if (s.y1 <= y + 0.08 && s.y1 > best) best = s.y1;
+    }
+  }
+  for (let i = 0; i < WORLD.movers.length; i++) {
+    const s = WORLD.movers[i];
+    if (x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1) continue;
+    if (s.y1 <= y + 0.08 && s.y1 > best) best = s.y1;
+  }
+  return best;
+}
+/* is there a wall within `d` of the cat?  drives the idle wall-scratch */
+function wallNear(x, z, y, d) {
+  const b = binAt(z);
+  if (!b) return false;
+  for (let i = 0; i < b.length; i++) {
+    const s = b[i];
+    if (!s.on || s.kind === 'floor') continue;
+    if (s.y1 < y + 0.5) continue;
+    if (x > s.x0 - d && x < s.x1 + d && z > s.z0 - d && z < s.z1 + d) return true;
+  }
+  return Math.abs(Math.abs(x) - corrHW(z)) < d;
+}
+
+/* ── collision: AABB vs the cat's box, resolved axis by axis ────────── */
+const _cand = [];
+function gatherSolids(z) {
+  _cand.length = 0;
+  const i0 = Math.floor((z - 1.2 + 40) / BINZ), i1 = Math.floor((z + 1.2 + 40) / BINZ);
+  for (let i = i0; i <= i1; i++) {
+    const b = (i >= 0 && i < WORLD.bins.length) ? WORLD.bins[i] : null;
+    if (!b) continue;
+    for (let k = 0; k < b.length; k++) {
+      const s = b[k];
+      if (s.on && _cand.indexOf(s) < 0) _cand.push(s);
+    }
+  }
+  for (let i = 0; i < WORLD.movers.length; i++) {
+    const s = WORLD.movers[i];
+    if (Math.abs(s.cz - z) < 12) _cand.push(s);
+  }
+  return _cand;
+}
+function catH() { return CAT.rolling ? ROLL_H : CAT_H; }
+function overlaps(s, x, y, z, h) {
+  return x + CAT_R > s.x0 && x - CAT_R < s.x1 &&
+         z + CAT_R > s.z0 && z - CAT_R < s.z1 &&
+         y + h > s.y0 + 0.01 && y < s.y1 - 0.01;
+}
+
+function moveCat(dt) {
+  const h = catH();
+  const prevY = CAT.y;
+  CAT.grounded = false;
+  CAT.onMover = null;
+  const C = gatherSolids(CAT.z);
+
+  /* — Y —
+     Landing is resolved ONCE, after looking at every overlapping solid, and
+     a TRAMPOLINE among them always wins.  Two separate landing paths (deep
+     penetration and the edge probe for a fast fall that stops a hair above
+     the surface) each used to apply their own result, so a cat dropping
+     hard onto an awning or the birdbath rim simply stood on it. */
+  CAT.y += CAT.vy * dt;
+  let landY = null, landTramp = false, landMover = null;
+  for (let i = 0; i < C.length; i++) {
+    const s = C[i];
+    if (!overlaps(s, CAT.x, CAT.y, CAT.z, h)) continue;
+    if (CAT.vy <= 0 && prevY >= s.y1 - 0.34) {
+      if (landY === null || s.y1 > landY) { landY = s.y1; }
+      if (s.kind === 'tramp') landTramp = true;
+      if (s.mover) landMover = s;
+    } else if (CAT.vy > 0) {
+      CAT.y = s.y0 - h;
+      CAT.vy = 0;
+    }
+  }
+  /* edge probe: a fast fall can stop a hair ABOVE the surface without ever
+     penetrating it — that still counts as landing (and as a bounce) */
+  if (landY === null && CAT.vy <= 0.01) {
+    for (let i = 0; i < C.length; i++) {
+      const s = C[i];
+      if (CAT.x + CAT_R <= s.x0 || CAT.x - CAT_R >= s.x1) continue;
+      if (CAT.z + CAT_R <= s.z0 || CAT.z - CAT_R >= s.z1) continue;
+      if (CAT.y > s.y1 - 0.06 && CAT.y < s.y1 + 0.08) {
+        if (landY === null || s.y1 > landY) landY = s.y1;
+        if (s.kind === 'tramp') landTramp = true;
+        if (s.mover) landMover = s;
+      }
+    }
+  }
+  if (landY !== null) {
+    CAT.y = landY;
+    if (landTramp) {
+      /* awnings, the doghouse roof, the birdbath rim */
+      const pounced = CAT.pouncing;
+      if (pounced) pounceLand();
+      CAT.vy = pounced ? 15.5 : 12.6;
+      CAT.jumps = 1;
+      CAT.grounded = false;
+      cat.stretch = 1;
+      sfxBoing();
+    } else {
+      if (CAT.vy < -6) { cat.squash = 1; sfxLand(Math.min(1, -CAT.vy / 18)); }
+      CAT.vy = 0;
+      CAT.grounded = true;
+      CAT.onMover = landMover;
+    }
+  }
+  /* — X — */
+  CAT.x += CAT.vx * dt;
+  for (let i = 0; i < C.length; i++) {
+    const s = C[i];
+    if (!overlaps(s, CAT.x, CAT.y, CAT.z, h)) continue;
+    if (s.kind === 'crate' && (CAT.rolling || CAT.zoomT > 0)) { breakCrate(s); continue; }
+    const push = (CAT.x < (s.x0 + s.x1) / 2) ? (s.x0 - CAT_R - CAT.x) : (s.x1 + CAT_R - CAT.x);
+    CAT.x += push;
+    CAT.vx = 0;
+  }
+  /* — Z — */
+  CAT.z += CAT.vz * dt;
+  for (let i = 0; i < C.length; i++) {
+    const s = C[i];
+    if (!overlaps(s, CAT.x, CAT.y, CAT.z, h)) continue;
+    if (s.kind === 'crate' && (CAT.rolling || CAT.zoomT > 0)) { breakCrate(s); continue; }
+    const push = (CAT.z < (s.z0 + s.z1) / 2) ? (s.z0 - CAT_R - CAT.z) : (s.z1 + CAT_R - CAT.z);
+    CAT.z += push;
+    CAT.vz = 0;
+  }
+  /* The pounce shockwave fires from ONE place: "the cat is on the ground and
+     was still pouncing".  It used to live inside the penetration branch, and
+     the edge-probe landing path (which catches a fast fall a hair above the
+     surface) quietly bypassed it — so a perfectly aimed pounce on MOTHER
+     VACUUM's button did nothing at all. */
+  if (CAT.grounded && CAT.pouncing) pounceLand();
+
+  /* carried by a mover */
+  if (CAT.onMover) { CAT.x += CAT.onMover.vx * dt; CAT.z += CAT.onMover.vz * dt; }
+
+  /* soft corridor walls: a nudge, never a snap (design §1) */
+  const hw = corrHW(CAT.z) - 0.42;
+  if (CAT.x > hw) { CAT.vx -= (CAT.x - hw) * 26 * dt; CAT.x = Math.min(CAT.x, hw + 0.9); }
+  else if (CAT.x < -hw) { CAT.vx -= (CAT.x + hw) * 26 * dt; CAT.x = Math.max(CAT.x, -hw - 0.9); }
+  if (CAT.z < -9) { CAT.z = -9; CAT.vz = Math.max(0, CAT.vz); }
+  /* the arena gate: once a boss is engaged you are in the fight */
+  const gz = bossGateZ();
+  if (CAT.z < gz) { CAT.z = gz; CAT.vz = Math.max(0, CAT.vz); }
+
+  CAT.shadowY = Math.max(-2, groundUnder(CAT.x, CAT.z, CAT.y + 0.05));
+  if (CAT.shadowY < -50) CAT.shadowY = Math.max(-2, CAT.y - 0.02);
+
+  /* fell off the world → checkpoint respawn, one heart (design §3) */
+  if (CAT.y < -7 && !CAT.fainted) fellOff();
+}
+
+/* ── movers ────────────────────────────────────────────────────────── */
+function updateMovers(dt) {
+  for (let i = 0; i < WORLD.movers.length; i++) {
+    const m = WORLD.movers[i];
+    const px = m.cx, pz = m.cz;
+    const ph = simT / m.per * TAU;
+    if (m.ax === 'x') m.cx = m.bx + Math.sin(ph) * m.amp;
+    else if (m.ax === 'y') m.cy = m.by + Math.sin(ph) * m.amp;
+    else m.cz = m.bz + Math.sin(ph) * m.amp;
+    m.vx = (m.cx - px) / dt; m.vz = (m.cz - pz) / dt;
+    m.x0 = m.cx - m.sx / 2; m.x1 = m.cx + m.sx / 2;
+    m.y0 = m.cy - m.sy / 2; m.y1 = m.cy + m.sy / 2;
+    m.z0 = m.cz - m.sz / 2; m.z1 = m.cz + m.sz / 2;
+    if (m.g) m.g.position.set(m.cx, m.cy, m.cz);
+  }
+}
+
+/* ── the cat's verbs ───────────────────────────────────────────────── */
+function doJump() {
+  if (CAT.fainted) return;
+  if (CAT.grounded || CAT.coyote > 0) {
+    CAT.vy = JUMP_V; CAT.grounded = false; CAT.coyote = 0; CAT.jumps = 1;
+    CAT.holdJump = true; CAT.jumpHoldT = 0; CAT.rolling = false;
+    cat.stretch = 1; CAT.jumpsMade++;
+    sfxJump(0);
+  } else if (CAT.jumps === 1) {
+    CAT.vy = JUMP_V2; CAT.jumps = 2; CAT.twistT = TWIST_TIME;
+    CAT.holdJump = true; CAT.jumpHoldT = 0;
+    cat.stretch = 1; CAT.jumpsMade++;
+    sfxJump(1);
+  }
+}
+function doScratch() {
+  if (CAT.fainted || CAT.scratchT > 0 || CAT.whipT > 0) return;
+  CAT.scratchT = SCRATCH_TIME; CAT.scratchHit = 0; CAT.rolling = false;
+  sfxScratch();
+}
+function doWhip() {
+  if (CAT.fainted || CAT.whipT > 0 || CAT.whipCD > 0) return;
+  CAT.whipT = WHIP_TIME; CAT.whipCD = WHIP_TIME + WHIP_CD; CAT.rolling = false;
+  sfxWhoosh(0.8);
+}
+function doPounce() {
+  if (CAT.fainted || CAT.grounded || CAT.pouncing) return;
+  CAT.pouncing = true; CAT.vy = POUNCE_V; CAT.vx *= 0.35; CAT.vz *= 0.35;
+  sfxWhoosh(1.25);
+}
+function pounceLand() {
+  CAT.pouncing = false;
+  cat.squash = 1.3;
+  sfxThump();
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * TAU;
+    spark(CAT.x + Math.cos(a) * 0.4, CAT.y + 0.1, CAT.z + Math.sin(a) * 0.4,
+      Math.cos(a) * 6.5, 1.6, Math.sin(a) * 6.5, 0.36, 0.34, 0.02, 1.0, 0.92, 0.70, 6);
+  }
+  hitArea(CAT.x, CAT.y + 0.2, CAT.z, POUNCE_AOE, 'pounce');
+}
+function startleLaunch() {
+  CAT.vy = CUKE_V; CAT.grounded = false; CAT.jumps = 1; CAT.rolling = false;
+  CAT.launchCD = 0.7; CAT.cukeLaunches++;
+  cat.stretch = 1.4;
+  sfxYowl();
+  for (let i = 0; i < 9; i++)
+    spark(CAT.x + (Math.random() - 0.5) * 0.6, CAT.y + 0.5, CAT.z + (Math.random() - 0.5) * 0.6,
+      (Math.random() - 0.5) * 3, 2 + Math.random() * 3, (Math.random() - 0.5) * 3,
+      0.55, 0.20, 0.02, 1.0, 1.0, 0.75, 5);
+}
+
+/* ── attacks vs the world ──────────────────────────────────────────── */
+function breakCrate(s) {
+  if (!s.on) return;
+  s.on = false;
+  if (s.g) s.g.visible = false;
+  const c = rgb(s.col);
+  for (let i = 0; i < 9; i++) {
+    const a = Math.random() * TAU;
+    bit(s.cx, s.cy, s.cz, Math.cos(a) * 3.4, 2.4 + Math.random() * 3, Math.sin(a) * 3.4,
+      0.85, s.sx * 0.26, c[0], c[1], c[2], 24);
+  }
+  kibblePop(s.cx, s.cy, s.cz, 3);
+  sfxCrate();
+}
+function hitArea(x, y, z, r, verb) {
+  let n = 0;
+  const b = binAt(z);
+  const list = gatherSolids(z);
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (s.kind !== 'crate' || !s.on) continue;
+    if (Math.hypot(s.cx - x, s.cz - z) < r + s.sx * 0.5 && Math.abs(s.cy - y) < r + 0.6) { breakCrate(s); n++; }
+  }
+  for (let i = 0; i < ENTS.length; i++) {
+    const e = ENTS[i];
+    if (!e.alive || !e.bonk) continue;
+    const d = Math.hypot(e.x - x, e.z - z);
+    if (d < r + e.r && y > e.y - 0.9 && y < e.y + e.h + 1.0) { killEnt(e); n++; }
+  }
+  if (BOSS && BOSS.alive) bossMeleeHit(x, y, z, r, verb);
+  return n;
+}
+function updateAttacks(dt) {
+  if (CAT.scratchT > 0) {
+    const was = CAT.scratchT;
+    CAT.scratchT -= dt;
+    const f0 = 1 - was / SCRATCH_TIME, f1 = 1 - CAT.scratchT / SCRATCH_TIME;
+    for (const mark of [0.14, 0.60]) {
+      if (f0 <= mark && f1 > mark) {
+        const fx = CAT.x + Math.sin(CAT.face) * 0.72, fz = CAT.z + Math.cos(CAT.face) * 0.72;
+        hitArea(fx, CAT.y + 0.35, fz, SCRATCH_R, 'scratch');
+        for (let i = 0; i < 4; i++)
+          spark(fx + (Math.random() - 0.5) * 0.5, CAT.y + 0.42 + Math.random() * 0.3, fz + (Math.random() - 0.5) * 0.4,
+            Math.sin(CAT.face) * 3, 0.8, Math.cos(CAT.face) * 3, 0.20, 0.20, 0.02, 1.0, 0.96, 0.82, 0);
+      }
+    }
+    if (CAT.scratchT <= 0) CAT.scratchT = 0;
+  }
+  if (CAT.whipCD > 0) CAT.whipCD -= dt;
+  if (CAT.whipT > 0) {
+    const was = CAT.whipT;
+    CAT.whipT -= dt;
+    const f = 1 - CAT.whipT / WHIP_TIME;
+    /* the REFLECT window is deliberately most of the spin: a kid swings a
+       little early or a little late and the trash still goes back */
+    if (f > 0.06 && f < 0.94) {
+      hitArea(CAT.x, CAT.y + 0.35, CAT.z, WHIP_R, 'whip');
+      /* THE ranged answer: reflect every projectile in range back at its
+         thrower (design §2 — this is what makes turrets/raccoons solvable) */
+      for (let i = 0; i < PROJ.length; i++) {
+        const p = PROJ[i];
+        if (!p.on || p.own === 1) continue;
+        if (Math.hypot(p.x - CAT.x, p.z - CAT.z) > REFLECT_R) continue;
+        if (p.y < CAT.y - 0.5 || p.y > CAT.y + 1.7) continue;
+        p.own = 1;
+        const s = p.src;
+        if (s && s.alive !== false) {
+          const d = Math.hypot(s.x - p.x, s.z - p.z) || 1;
+          const sp = 17;
+          p.vx = (s.x - p.x) / d * sp; p.vz = (s.z - p.z) / d * sp;
+          p.vy = Math.max(3.2, (s.y + s.h * 0.6 - p.y) * 1.9 + 3.0);
+        } else {
+          p.vx *= -1.6; p.vz *= -1.6; p.vy = 5;
+        }
+        sfxReflect();
+        for (let k = 0; k < 6; k++)
+          spark(p.x, p.y, p.z, (Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4,
+            0.30, 0.26, 0.02, 1.0, 0.95, 0.55, 4);
+      }
+      /* the whip is also the projectile that reaches the Raccoon King */
+      if (BOSS && BOSS.alive) bossWhip();
+    }
+    /* claw / tail streaks */
+    if ((simTicks % 4) === 0) {
+      const a = f * TAU;
+      spark(CAT.x + Math.cos(a) * 1.0, CAT.y + 0.42, CAT.z + Math.sin(a) * 1.0,
+        0, 0.4, 0, 0.22, 0.26, 0.02, 1.0, 0.90, 0.60, 0);
+    }
+    if (CAT.whipT <= 0) CAT.whipT = 0;
+  }
+  if (CAT.twistT > 0) { CAT.twistT -= dt; if (CAT.twistT < 0) CAT.twistT = 0; }
+  if (CAT.launchCD > 0) CAT.launchCD -= dt;
+
+  /* rolling / zoomies contact damage */
+  if (CAT.rolling || CAT.zoomT > 0) {
+    for (let i = 0; i < ENTS.length; i++) {
+      const e = ENTS[i];
+      if (!e.alive || !e.bonk) continue;
+      if (Math.hypot(e.x - CAT.x, e.z - CAT.z) < e.r + CAT_R + 0.14 &&
+          CAT.y < e.y + e.h + 0.4 && CAT.y + catH() > e.y - 0.2) killEnt(e);
+    }
+    if (BOSS && BOSS.alive) bossMeleeHit(CAT.x, CAT.y + 0.2, CAT.z, CAT_R + 0.3, CAT.rolling ? 'roll' : 'zoom');
+  }
+}
+
+/* ── damage, faint, respawn ────────────────────────────────────────── */
+function hurtCat(fx, fz, force) {
+  if (CAT.fainted) return false;
+  if (CAT.invuln > 0 || CAT.zoomT > 0) return false;
+  CAT.hearts--;
+  CAT.invuln = INVULN;
+  CAT.rolling = false; CAT.pouncing = false;
+  const d = Math.hypot(CAT.x - fx, CAT.z - fz) || 1;
+  const k = force || 6.5;
+  CAT.vx = (CAT.x - fx) / d * k;
+  CAT.vz = (CAT.z - fz) / d * k - 1.2;
+  CAT.vy = 5.4;
+  CAT.grounded = false;
+  hudHurt();
+  sfxHurt();
+  for (let i = 0; i < 7; i++)
+    spark(CAT.x, CAT.y + 0.5, CAT.z, (Math.random() - 0.5) * 5, Math.random() * 4, (Math.random() - 0.5) * 5,
+      0.4, 0.22, 0.02, 1.0, 0.45, 0.35, 6);
+  if (CAT.hearts <= 0) faint();
+  return true;
+}
+function faint() {
+  CAT.hearts = 0;
+  CAT.fainted = true;
+  CAT.faintT = 1.5;
+  CAT.deaths++;
+  CAT.rolling = false; CAT.pouncing = false;
+  CAT.scratchT = 0; CAT.whipT = 0;
+  sfxFaint();
+  banner('OOF!', 'back to the last food bowl');
+}
+function fellOff() {
+  if (CAT.fainted) return;
+  CAT.hearts = Math.max(0, CAT.hearts - 1);
+  hudHurt();
+  sfxFall();
+  if (CAT.hearts <= 0) { faint(); return; }
+  respawn(false);
+}
+function respawn(full) {
+  CAT.x = CAT.cp.x; CAT.y = CAT.cp.y + 0.05; CAT.z = CAT.cp.z;
+  CAT.vx = CAT.vy = CAT.vz = 0;
+  CAT.fainted = false; CAT.faintT = 0;
+  CAT.rolling = false; CAT.pouncing = false;
+  CAT.scratchT = 0; CAT.whipT = 0; CAT.twistT = 0;
+  CAT.jumps = 0; CAT.grounded = true;
+  CAT.invuln = MERCY;
+  if (full) CAT.hearts = 3;
+  hudHearts();
+  camSnap();
+  if (BOSS) bossReset();
+}
+
+/* ── pickups ───────────────────────────────────────────────────────── */
+function gainKibble(n, x, y, z) {
+  CAT.kibble += n;
+  CAT.kibSince += n;
+  sfxKibble();
+  for (let i = 0; i < 2; i++)
+    spark(x, y, z, (Math.random() - 0.5) * 1.6, 1.6 + Math.random(), (Math.random() - 0.5) * 1.6,
+      0.32, 0.16, 0.02, 1.0, 0.86, 0.36, 3);
+  if (CAT.kibSince >= KIB_PER_HEART) {
+    CAT.kibSince -= KIB_PER_HEART;
+    CAT.hearts = 3;
+    hudHearts();
+    banner('FULL BELLY!', 'hearts topped up');
+    sfxJingle();
+    for (let i = 0; i < 18; i++) {
+      const a = Math.random() * TAU;
+      bit(CAT.x, CAT.y + 1.0, CAT.z, Math.cos(a) * 4, 4 + Math.random() * 4, Math.sin(a) * 4,
+        1.4, 0.10, 0.4 + Math.random() * 0.6, 0.5 + Math.random() * 0.5, 0.3 + Math.random() * 0.6, 14);
+    }
+  }
+  hudKibble();
+}
+function updateKibble(dt) {
+  for (let i = 0; i < KIBS.length; i++) {
+    const k = KIBS[i];
+    if (!k.on) continue;
+    k.t += dt * 2.4;
+    if (k.free) {
+      k.vy -= 24 * dt;
+      k.x += k.vx * dt; k.y += k.vy * dt; k.z += k.vz * dt;
+      const g = groundAt(k.x, k.z);
+      if (k.y <= g + 0.16) {
+        k.y = g + 0.16;
+        if (Math.abs(k.vy) < 1.4) { k.free = false; k.vx = k.vy = k.vz = 0; }
+        else { k.vy *= -0.42; k.vx *= 0.6; k.vz *= 0.6; }
+      }
+    }
+    const dz = k.z - CAT.z;
+    if (dz < -3 || dz > 6) continue;
+    const dx = k.x - CAT.x, dy = k.y - (CAT.y + 0.35);
+    const d = Math.hypot(dx, dy, dz);
+    const reach = CAT.zoomT > 0 ? KIB_MAGNET * 1.8 : KIB_MAGNET;
+    if (d < reach) {
+      /* magnet pull, then collect — kid-generous, the Kirby rule */
+      const pull = (reach - d) / reach * 26 * dt;
+      k.x -= dx / (d || 1) * pull; k.y -= dy / (d || 1) * pull; k.z -= dz / (d || 1) * pull;
+      k.free = true; k.vy = Math.max(k.vy, 0);
+      if (d < KIB_TAKE) { k.on = false; gainKibble(1, k.x, k.y, k.z); }
+    }
+  }
+}
+function updatePicks(dt) {
+  for (let i = 0; i < PICKS.length; i++) {
+    const p = PICKS[i];
+    if (!p.on) continue;
+    p.t += dt;
+    const dz = p.z - CAT.z;
+    const near = dz > -12 && dz < 66;
+    p.g.visible = near;
+    if (!near) continue;
+    p.g.position.y = p.y0 + Math.sin(p.t * 2.2) * 0.10;
+    p.g.rotation.y = p.t * (p.k === 'mouse' ? 1.5 : 1.1);
+    if (Math.hypot(p.x - CAT.x, p.z - CAT.z) < 1.05 && Math.abs(p.g.position.y - CAT.y) < 1.5) {
+      p.on = false; p.g.visible = false;
+      takeTreat(p);
+    }
+  }
+}
+function takeTreat(p) {
+  if (p.k === 'fish') {
+    CAT.hearts = 3; hudHearts();
+    banner('FISH!', 'all hearts back');
+    sfxChime(1.0);
+  } else if (p.k === 'milk') {
+    CAT.zoomT = ZOOM_TIME;
+    banner('ZOOMIES!', 'nothing can stop you');
+    sfxChime(1.3); sfxZoomStart();
+  } else {
+    for (let i = 0; i < 3; i++) if (!CAT.mice[i]) { CAT.mice[i] = true; break; }
+    hudMice();
+    banner('GOLDEN MOUSE!', 'bragging rights secured');
+    sfxChime(1.6);
+  }
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * TAU;
+    spark(p.x, p.y + 0.3, p.z, Math.cos(a) * 3.4, 2 + Math.random() * 4, Math.sin(a) * 3.4,
+      0.9, 0.26, 0.02, 1.0, 0.92, 0.55, 5);
+  }
+}
+function updateCheckpoints() {
+  for (let i = 0; i < WORLD.checkpoints.length; i++) {
+    const c = WORLD.checkpoints[i];
+    if (c.hit) continue;
+    if (Math.abs(c.z - CAT.z) < 1.5 && Math.abs(c.x - CAT.x) < 2.2 && Math.abs(CAT.y - c.y) < 2.4) {
+      c.hit = true;
+      CAT.cp.x = c.x; CAT.cp.y = c.y; CAT.cp.z = c.z + 1.2;
+      banner('NICE!', 'checkpoint — have a snack');
+      sfxChirp(1.2);
+      for (let k = 0; k < 14; k++) {
+        const a = Math.random() * TAU;
+        spark(c.x, 1.0 + Math.random(), c.z, Math.cos(a) * 2.6, 2.4 + Math.random() * 2, Math.sin(a) * 2.6,
+          1.0, 0.24, 0.02, 1.0, 0.88, 0.45, 4);
+      }
+    }
+  }
+}
+
+/* ── enemy / hazard contact ────────────────────────────────────────── */
+function contactCheck(dt) {
+  const h = catH();
+  for (let i = 0; i < ENTS.length; i++) {
+    const e = ENTS[i];
+    if (e.dead) continue;
+    const dz = e.z - CAT.z;
+    if (dz < -4 || dz > 10) continue;
+    const d = Math.hypot(e.x - CAT.x, e.z - CAT.z);
+
+    if (e.k === 'cuke') {
+      if (e.alive && d < e.r + CAT_R && CAT.y < e.y + 0.7 && CAT.launchCD <= 0) startleLaunch();
+      continue;
+    }
+    if (e.k === 'vent') {
+      if (e.st && d < 4.6 && Math.abs(e.z - CAT.z) < 2.6) {
+        CAT.vx += e.amp * 15 * dt;
+        if ((simTicks % 20) === 0) sfxWind();
+      }
+      continue;
+    }
+    if (e.k === 'zap') {
+      if (e.st && Math.abs(e.z - CAT.z) < 0.7 && Math.abs(e.x - CAT.x) < 0.85 &&
+          CAT.y < e.y + 1.5 && CAT.y + h > e.y + 0.25) hurtCat(e.x, e.z);
+      continue;
+    }
+    if (e.k === 'sprk') {
+      /* the rotating arc: you are wet if you stand in the lane it is aimed
+         down — instructive, not random (Maria's rule) */
+      const ang = Math.atan2(CAT.x - e.x, CAT.z - e.z);
+      let da = ang - e.face;
+      while (da > Math.PI) da -= TAU;
+      while (da < -Math.PI) da += TAU;
+      if (Math.abs(da) < 0.34 && d > 0.5 && d < 4.2 && CAT.y < e.y + 1.5) {
+        if (hurtCat(e.x, e.z, 5.0)) sfxSplat(0.6);
+      }
+      continue;
+    }
+    if (e.k === 'gnome') {
+      if (e.tip > 0.2 && e.tip < 1 && d < 1.5 && CAT.y < e.y + 1.0) hurtCat(e.x, e.z, 5.5);
+      continue;
+    }
+    if (!e.alive) continue;
+    if (e.mesm > 0) continue;
+    if (d < e.r + CAT_R && CAT.y < e.y + e.h + 0.3 && CAT.y + h > e.y) {
+      /* pouncing / rolling / zoomies contact is a BONK, never damage */
+      if (CAT.pouncing || CAT.rolling || CAT.zoomT > 0) { if (e.bonk) killEnt(e); continue; }
+      if (e.hurt) hurtCat(e.x, e.z, e.k === 'dog' ? 7.5 : 6.5);
+    }
+  }
+  /* enemy projectiles */
+  for (let i = 0; i < PROJ.length; i++) {
+    const p = PROJ[i];
+    if (!p.on || p.own === 1) continue;
+    if (Math.hypot(p.x - CAT.x, p.z - CAT.z) < 0.52 && p.y > CAT.y - 0.2 && p.y < CAT.y + h + 0.4) {
+      p.on = false; p.g.visible = false;
+      hurtCat(p.x, p.z, 5.5);
+      sfxSplat(0.7);
+    }
+  }
+}
+
+/* ── idle theater bookkeeping ─────────────────────────────────────────
+   The pose driver owns the animation; this owns the STAGE.  Any input
+   cancels on the first frame, which is why the cancel lives here in the
+   sim and not in a render-time timer.                                  */
+function updateIdle(dt, anyInput) {
+  if (anyInput || !CAT.grounded || CAT.rolling || CAT.zoomT > 0 || CAT.fainted ||
+      CAT.scratchT > 0 || CAT.whipT > 0 || Math.hypot(CAT.vx, CAT.vz) > 0.35 ||
+      (BOSS && BOSS.alive && BOSS.engaged)) {
+    if (CAT.idleStage >= 3) sfxPurrStop();
+    CAT.idleT = 0; CAT.idleStage = 0; CAT.idleWall = false;
+    return;
+  }
+  CAT.idleT += dt;
+  const was = CAT.idleStage;
+  CAT.idleStage = CAT.idleT >= IDLE_T[2] ? 3 : CAT.idleT >= IDLE_T[1] ? 2 : CAT.idleT >= IDLE_T[0] ? 1 : 0;
+  if (CAT.idleStage === 1 && was === 0) {
+    idleFired[0] = true;
+    CAT.idleWall = wallNear(CAT.x, CAT.z, CAT.y, 1.0);
+    sfxMeow(0.9);
+  }
+  if (CAT.idleStage === 2 && was < 2) { idleFired[1] = true; sfxLick(); }
+  if (CAT.idleStage === 3 && was < 3) { idleFired[2] = true; sfxPurrStart(); }
+}
+
+/* ── camera ────────────────────────────────────────────────────────────
+   No camera stick, no yaw: it rides behind and above, faces +Z, leads the
+   cat by ~1.5 m, pitches up when the route climbs, and widens on arenas.
+   camera.x deliberately follows the cat only PARTWAY (0.72), so lateral
+   movement actually reads on screen instead of being cancelled out.     */
+const CAM = { x: 0, y: 3.0, z: -7, tx: 0, ty: 0.9, tz: 1.5, dist: 6.1, high: 2.55, fov: 55 };
+/* interior ceilings: the camera must never pop through one (it did, and the
+   boss room turned into a featureless cream sheet — the underside of the
+   ceiling slab seen from above) */
+/* is this point inside anything solid?  used only by the camera pull-in */
+function pointBlocked(x, y, z, r) {
+  const b = binAt(z);
+  if (!b) return false;
+  for (let i = 0; i < b.length; i++) {
+    const s = b[i];
+    if (!s.on) continue;
+    if (x > s.x0 - r && x < s.x1 + r && y > s.y0 - r && y < s.y1 + r &&
+        z > s.z0 - r && z < s.z1 + r) return true;
+  }
+  return false;
+}
+function ceilAt(z) {
+  const C = WORLD.ceil;
+  for (let i = 0; i < C.length; i++) if (z >= C[i].z0 && z < C[i].z1) return C[i].h;
+  return 1e9;
+}
+function camSnap() {
+  CAM.x = CAT.x * 0.72; CAM.y = CAT.y + CAM.high; CAM.z = CAT.z - CAM.dist;
+  CAM.y = Math.min(CAM.y, ceilAt(CAM.z) - 0.45);
+  CAM.tx = CAT.x * 0.86; CAM.ty = CAT.y + 0.85; CAM.tz = CAT.z + 1.5;
+  applyCam();
+}
+function applyCam() {
+  camera.position.set(CAM.x, CAM.y, CAM.z);
+  /* the fill light rides the lens so the cat never silhouettes into a blob */
+  fillLight.position.set(CAM.x, CAM.y + 3.2, CAM.z - 2.0);
+  fillLight.target.position.set(CAT.x, CAT.y + 0.4, CAT.z + 2);
+  fillLight.target.updateMatrixWorld();
+  camera.lookAt(CAM.tx, CAM.ty, CAM.tz);
+  camera.fov = CAM.fov;
+  camera.updateProjectionMatrix();
+  aimSun(CAT.x, CAT.y, CAT.z + 6);
+}
+function updateCam(dt) {
+  const arena = !!(BOSS && BOSS.alive && BOSS.engaged);
+  const wantDist = arena ? 8.6 : (CAT.zoomT > 0 ? 7.1 : 6.1);
+  const wantHigh = arena ? 3.7 : (CAT.zoomT > 0 ? 2.85 : 2.55);
+  const wantFov = arena ? 60 : (CAT.zoomT > 0 ? 62 : 55);
+  CAM.dist = smooth(CAM.dist, wantDist, 0.045, dt);
+  CAM.high = smooth(CAM.high, wantHigh, 0.045, dt);
+  CAM.fov = smooth(CAM.fov, wantFov, 0.045, dt);
+  /* climb read: if the route ahead rises, lift and pitch up a little */
+  const hereY = Math.max(CAT.shadowY, CAT.y);
+  const aheadY = groundAt(CAT.x, CAT.z + 7);
+  const climb = clamp((aheadY > -50 ? aheadY : hereY) - hereY, -2.5, 4.0);
+  const bx = CAT.x * 0.72;
+  const by = hereY + CAM.high + Math.max(0, CAT.y - hereY) * 0.55 + climb * 0.28;
+  const bz = CAT.z - CAM.dist;
+  /* pull-in: a door lintel, a shelf or a chimney between the cat and the lens
+     used to swallow the whole frame.  Walk the boom in from the full length
+     until the camera point is clear (never shorter than 40% of the boom). */
+  let t = 1;
+  for (; t > 0.40; t -= 0.10) {
+    if (!pointBlocked(lerp(CAT.x, bx, t), lerp(CAT.y + 0.9, by, t), lerp(CAT.z, bz, t), 0.34)) break;
+  }
+  const wx = lerp(CAT.x, bx, t), wy = lerp(CAT.y + 0.9, by, t), wz = lerp(CAT.z, bz, t);
+  CAM.x = smooth(CAM.x, wx, 0.10, dt);
+  CAM.y = smooth(CAM.y, wy, 0.14, dt);
+  CAM.z = smooth(CAM.z, wz, 0.22, dt);
+  CAM.y = Math.min(CAM.y, ceilAt(CAM.z) - 0.45);
+  CAM.tx = smooth(CAM.tx, CAT.x * 0.86, 0.16, dt);
+  /* an elevated boss (the Raccoon King on his water tower) must be IN the
+     frame, not above it — the look-at rises toward him while engaged */
+  const lift = (arena && BOSS && BOSS.y > 2) ? Math.min(2.4, (BOSS.y - CAT.y) * 0.46) : 0;
+  CAM.ty = smooth(CAM.ty, CAT.y + 0.80 + climb * 0.18 + lift, 0.10, dt);
+  CAM.tz = smooth(CAM.tz, CAT.z + 1.35 + (arena ? 1.6 : 0), 0.16, dt);
+  applyCam();
+}
+
+/* ── the one sim tick ──────────────────────────────────────────────── */
+function tickSim(inp) {
+  simT += DT; simTicks++;
+  const dt = DT;
+
+  if (CAT.invuln > 0) CAT.invuln -= dt;
+  if (CAT.zoomT > 0) {
+    CAT.zoomT -= dt;
+    if (CAT.zoomT <= 0) { CAT.zoomT = 0; sfxZoomStop(); }
+  }
+  if (CAT.tailFlick > 0) CAT.tailFlick -= dt;
+
+  updateMovers(dt);
+
+  if (CAT.fainted) {
+    CAT.faintT -= dt;
+    CAT.vy -= GRAV * dt;
+    moveCat(dt);
+    CAT.vx *= Math.pow(0.02, dt); CAT.vz *= Math.pow(0.02, dt);
+    if ((simTicks % 14) === 0) dizzyStars(CAT.x, CAT.y + 0.7, CAT.z, 1);
+    if (CAT.faintT <= 0) { respawn(true); banner('', ''); }
+    updateEnts(dt); updateProj(dt); updateCheckpoints();
+    stepPool(sparks, dt); stepPool(bits, dt);
+    return;
+  }
+
+  /* — input → intent — */
+  let mx = inp.lx, mz = -inp.ly;             // screen up = -ly = forward (+Z)
+  const mag = Math.hypot(mx, mz);
+  if (mag > 1) { mx /= mag; mz /= mag; }
+  /* SCREEN-SPACE DIRECTION LAW: screen-right is world -X behind this camera */
+  const wantX = mx * SCREEN_RIGHT_X, wantZ = mz;
+
+  const anyInput = mag > 0.06 || inp.jump || inp.scratch || inp.whip || inp.roll;
+
+  /* roll ("zoomies") — East held on the ground */
+  if (inp.roll && CAT.grounded && !CAT.pouncing && CAT.scratchT <= 0 && CAT.whipT <= 0) {
+    if (!CAT.rolling) { CAT.rolling = true; sfxRollStart(); }
+  } else if (CAT.rolling && (!inp.roll || !CAT.grounded)) {
+    CAT.rolling = false; sfxRollStop();
+  }
+  /* the three attack verbs, all on the press-EVENT stream (held buttons only
+     ever drive movement and the roll — house law) */
+  if (inp.scratchEdge) doScratch();
+  if (inp.whipEdge) doWhip();
+  if (inp.rollEdge && !CAT.grounded) doPounce();   // ○ in the air = POUNCE
+
+  const speedCap = RUN_MAX * (CAT.rolling ? ROLL_MULT : 1) * (CAT.zoomT > 0 ? ZOOM_SPEED : 1);
+  const acc = CAT.grounded ? (CAT.rolling ? ACC_G * 0.55 : ACC_G) : ACC_A;
+  const dec = CAT.grounded ? (CAT.rolling ? DEC_G * 0.30 : DEC_G) : ACC_A * 0.5;
+
+  if (CAT.zoomT > 0) {
+    /* ZOOMIES MODE: an automatic forward burst you can steer */
+    const tz = speedCap, tx = wantX * speedCap * 0.75;
+    CAT.vz += (Math.max(tz * 0.86, wantZ * speedCap) - CAT.vz) * 9 * dt;
+    CAT.vx += (tx - CAT.vx) * 9 * dt;
+  } else if (mag > 0.06 && CAT.scratchT <= 0 && CAT.whipT <= 0) {
+    CAT.vx += (wantX * speedCap - CAT.vx) * acc / speedCap * dt * 2.2;
+    CAT.vz += (wantZ * speedCap - CAT.vz) * acc / speedCap * dt * 2.2;
+  } else {
+    const k = Math.pow(0.0009 + (CAT.rolling ? 0.35 : 0), dt);
+    CAT.vx *= k; CAT.vz *= k;
+    if (Math.abs(CAT.vx) < 0.02) CAT.vx = 0;
+    if (Math.abs(CAT.vz) < 0.02) CAT.vz = 0;
+  }
+  const sp = Math.hypot(CAT.vx, CAT.vz);
+  if (sp > speedCap) { CAT.vx = CAT.vx / sp * speedCap; CAT.vz = CAT.vz / sp * speedCap; }
+
+  /* facing + turn rate (the turn rate is what the lean and tail read) */
+  if (sp > 0.45) {
+    const want = Math.atan2(CAT.vx, CAT.vz);
+    let d = want - CAT.face;
+    while (d > Math.PI) d -= TAU;
+    while (d < -Math.PI) d += TAU;
+    const rate = clamp(d * 12, -14, 14);
+    CAT.turn = smooth(CAT.turn, rate, 0.2, dt);
+    CAT.face += clamp(d, -12 * dt * (CAT.rolling ? 0.5 : 1), 12 * dt * (CAT.rolling ? 0.5 : 1));
+  } else CAT.turn = smooth(CAT.turn, 0, 0.12, dt);
+
+  /* — jump: coyote time + input buffer, both kept kid-friendly (LAW) — */
+  if (inp.jumpEdge) CAT.buffer = BUFFER;
+  if (CAT.buffer > 0) {
+    CAT.buffer -= dt;
+    if (CAT.grounded || CAT.coyote > 0 || CAT.jumps === 1) { doJump(); CAT.buffer = 0; }
+  }
+  if (CAT.grounded) { CAT.coyote = COYOTE; CAT.jumps = 0; }
+  else if (CAT.coyote > 0) CAT.coyote -= dt;
+  if (!inp.jump) CAT.holdJump = false;
+  if (CAT.holdJump) {
+    CAT.jumpHoldT += dt;
+    if (CAT.jumpHoldT > JUMP_HOLD_MAX || CAT.vy <= 0) CAT.holdJump = false;
+  }
+
+  /* — gravity — */
+  const g = (CAT.holdJump && CAT.vy > 0) ? GRAV_HOLD : GRAV;
+  CAT.vy -= g * dt;
+  if (CAT.vy < -GRAV_CAP) CAT.vy = -GRAV_CAP;
+
+  moveCat(dt);
+
+  /* footfall taps, surface-varied by the material under the paw */
+  if (CAT.grounded && sp > 1.2 && !CAT.rolling) {
+    CAT.stepT -= dt * (0.6 + sp / RUN_MAX * 1.8);
+    if (CAT.stepT <= 0) { CAT.stepT = 0.30; sfxStep(sp / RUN_MAX); }
+  }
+  if (CAT.rolling && (simTicks % 26) === 0) sfxRollTick();
+
+  updateAttacks(dt);
+  updateEnts(dt);
+  updateProj(dt);
+  contactCheck(dt);
+  updateKibble(dt);
+  updatePicks(dt);
+  updateCheckpoints();
+  updateBoss(dt);
+  updateIdle(dt, anyInput);
+  stepPool(sparks, dt);
+  stepPool(bits, dt);
+  if (CAT.zoomT > 0 && (simTicks % 3) === 0) {
+    spark(CAT.x + (Math.random() - 0.5) * 0.5, CAT.y + 0.4 + Math.random() * 0.5, CAT.z - 0.3,
+      (Math.random() - 0.5) * 1.5, 1.2, -2.5, 0.55, 0.26, 0.02, 1.0, 0.88, 0.50, 0);
+  }
+  if (CAT.z > CAT.bestZ) CAT.bestZ = CAT.z;
+}
+</script>

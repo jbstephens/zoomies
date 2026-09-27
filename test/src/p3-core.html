@@ -1,0 +1,686 @@
+<script>
+/* ═══════════════════ ZOOMIES! — p3 core ═══════════════════════════════
+   Flags, the measured Pi look pipeline (ACES + Lambert + baked vertex AO +
+   ONE 1024 curated shadow map + ONE post pass on a samples:0 RT), the
+   merged-geometry kit, the actor part kit, and the four instanced pools
+   (glows / sparks / bits / kibble) that keep the whole VFX layer at four
+   draw calls.
+
+   Every law in here was measured on the real kiosk — see
+   gameconsole/CLAUDE.md "3D look budget" and memory/pi-look-budget.md:
+     · shadow map is 1024, NEVER 2048; casters are CURATED (cat, enemies,
+       boss — terrain and furniture never cast, everything receives)
+     · post pass renders into a samples:0 RT.  MSAA on an RT costs ~21fps,
+       and context MSAA cannot apply to an RT — so the post pass wins and
+       `antialias` is OFF whenever the post pass is on
+     · lowfx (?fx=low, the kiosk default) = shadow OFF + painted blob
+       shadow under the cat, post pass STILL ON (the FC kiosk precedent)
+     · no canvas shadowBlur (there is no 2D canvas), no backdrop-filter  */
+
+const VW = 1280, VH = 720;
+const TAU = Math.PI * 2;
+const DEG = Math.PI / 180;
+
+/* ── small math shared by every part ───────────────────────────────── */
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function smooth(a, b, k, dt) { return a + (b - a) * (1 - Math.pow(1 - k, dt * 60)); }
+function sgn(v) { return v < 0 ? -1 : v > 0 ? 1 : 0; }
+/* deterministic per-level RNG — level layouts are DATA, but the deco jitter
+   that keeps them from looking stamped is seeded, so a level looks the same
+   every run (and the harness sees a stable world). */
+function mkRnd(seed) {
+  let s = seed >>> 0;
+  return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+/* ── flags ─────────────────────────────────────────────────────────── */
+const QS = new URLSearchParams(location.search);
+let LOWFX = false;
+try {
+  if (QS.get('fx') === 'low') { LOWFX = true; localStorage.setItem('arcade_lowfx', '1'); }
+  else if (QS.get('fx') === 'full') { localStorage.setItem('arcade_lowfx', '0'); }
+  else { LOWFX = localStorage.getItem('arcade_lowfx') === '1'; }
+} catch (e) { LOWFX = false; }
+const LOOK = QS.get('look') !== '0';          // ?look=0 → flat unlit fallback
+const DEVHUD = QS.get('dev') === '1';
+
+/* ── renderer ──────────────────────────────────────────────────────── */
+const canvas = document.getElementById('gl');
+/* LAW: antialias and the post pass are mutually exclusive.  The post RT is
+   samples:0, and context MSAA never reaches an RT — asking for both just
+   burns fill rate on a buffer nobody resolves. */
+const FX = { shadow: LOOK && !LOWFX, post: LOOK, msaa: false };
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: !FX.post, powerPreference: 'high-performance', stencil: false,
+});
+renderer.setPixelRatio(1);
+renderer.setSize(VW, VH, false);
+renderer.info.autoReset = false;      // frame() resets manually so the count
+                                      // covers shadow pass + scene + post
+renderer.setClearColor(0x120a18, 1);
+if (LOOK) {
+  /* Colour pipeline (PP-LOOK law): the baked vertex colours are DISPLAY-
+     REFERRED.  outputEncoding stays at the default pass-through — adding
+     sRGBEncoding double-encodes and washes everything out.  ACES lifts the
+     midtones and desaturates; the grade's gamma/sat knobs undo exactly
+     that, per theme. */
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  renderer.shadowMap.enabled = FX.shadow;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+}
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, VW / VH, 0.12, 900);
+camera.position.set(0, 4.2, -7.5);
+camera.rotation.order = 'YXZ';
+
+scene.fog = new THREE.Fog(0xf0dcc0, 34, 150);
+
+const sunLight = new THREE.DirectionalLight(0xffeccf, 0.9);
+sunLight.position.set(30, 60, -20);
+scene.add(sunLight);
+const hemiLight = new THREE.HemisphereLight(0xcfe2ff, 0x6a5240, 0.5);
+scene.add(hemiLight);
+/* a small ambient floor so ceilings, undersides and shade-side walls read as
+   dim rather than as holes — three lights total, all of them free */
+const ambLight = new THREE.AmbientLight(0xffe8cf, 0.30);
+scene.add(ambLight);
+/* a soft fill from the camera's side of the world.  Lambert lighting alone
+   leaves the cat a dark blob whenever he is between the sun and the lens —
+   fatal on the night rooftops, where he IS the thing you must read.  The
+   fill rides the camera every frame (updateCam) and costs one more light. */
+const fillLight = new THREE.DirectionalLight(0xfff0d8, 0.16);
+scene.add(fillLight);
+scene.add(fillLight.target);
+
+/* ONE 1024 shadow map in a tight box that follows the cat.  LAW: 1024 and
+   never bigger — 2048 × many casters measured 51.8fps on the Pi. */
+if (LOOK) {
+  sunLight.castShadow = FX.shadow;
+  sunLight.shadow.mapSize.set(1024, 1024);
+  const shc = sunLight.shadow.camera;
+  shc.left = -14; shc.right = 14; shc.top = 14; shc.bottom = -14;
+  shc.near = 2; shc.far = 110;
+  shc.updateProjectionMatrix();
+  sunLight.shadow.bias = -0.0012;
+  sunLight.shadow.normalBias = 0.02;
+  scene.add(sunLight.target);
+}
+/* SUNDIR is the bake direction AND the real light direction, kept in sync so
+   baked AO and the live shadow agree. */
+let SUNDIR = [0.42, 0.78, -0.46];
+function aimSun(x, y, z) {
+  sunLight.position.set(x + SUNDIR[0] * 46, y + SUNDIR[1] * 46, z + SUNDIR[2] * 46);
+  sunLight.target.position.set(x, y, z);
+  sunLight.target.updateMatrixWorld();
+}
+
+/* ── per-theme look tuning (all three levels share one pipeline) ────── */
+const THEMES = {
+  house: {
+    sun: 0xffeccf, sunI: 0.62, hemiSky: 0xffeedb, hemiGnd: 0xa08468, hemiI: 0.46,
+    amb: 0xffe8cf, ambI: 0.34, bakeWarm: 1.0,
+    sundir: [0.50, 0.70, -0.51],
+    fog: 0xecd6b4, fogNear: 58, fogFar: 175, fillI: 0.16, fill: 0xfff0d8,
+    voidY: -7, voidCol: 0x2b1d14,
+    sky: [0xfff4dd, 0xffe3b6, 0xecc389, 0xc09468],
+    tune: { exp: 1.03, lift: [0.014, 0.014, 0.018], gain: [1.16, 1.12, 1.05],
+            gamma: [1.18, 1.20, 1.26], sat: 1.16, vig: 0.30 },
+  },
+  yard: {
+    sun: 0xfff3d0, sunI: 0.70, hemiSky: 0xd6ecff, hemiGnd: 0x7f9a58, hemiI: 0.46,
+    amb: 0xe8f2ff, ambI: 0.28, bakeWarm: 0.85,
+    sundir: [0.40, 0.74, -0.54],
+    fog: 0xcfe6de, fogNear: 62, fogFar: 215, fillI: 0.14, fill: 0xeaf4ff,
+    voidY: -7, voidCol: 0x33301e,
+    sky: [0x9fd4ff, 0xc8e8ff, 0xeef2d2, 0xd8dc9c],
+    tune: { exp: 1.02, lift: [0.012, 0.012, 0.014], gain: [1.12, 1.14, 1.09],
+            gamma: [1.18, 1.16, 1.22], sat: 1.18, vig: 0.26 },
+  },
+  night: {
+    sun: 0xc6d8ff, sunI: 0.40, hemiSky: 0x7f92d8, hemiGnd: 0x2e2650, hemiI: 0.40,
+    amb: 0x6d7ac0, ambI: 0.26, bakeWarm: -0.6,
+    sundir: [-0.38, 0.72, -0.58],
+    fog: 0x241d42, fogNear: 48, fogFar: 235, fillI: 0.62, fill: 0xffd2a8,
+    voidY: -11, voidCol: 0x100c22,
+    sky: [0x08081e, 0x151340, 0x2a2060, 0x4f3468],
+    tune: { exp: 1.06, lift: [0.004, 0.004, 0.006], gain: [1.10, 1.08, 1.16],
+            gamma: [1.06, 1.08, 1.02], sat: 1.18, vig: 0.38 },
+  },
+};
+const LOOK_TUNE = { exp: 1.0, lift: [0, 0, 0], gain: [1, 1, 1], gamma: [1, 1, 1], sat: 1, vig: 0.3 };
+let THEME = THEMES.house;
+
+/* ── the merged-geometry kit (static world, baked lighting) ─────────── */
+const _bc = [0, 0, 0];
+function rgb(hex) { return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]; }
+function MD() { return { p: [], c: [] }; }
+
+/* Bake: one sun term + a sky/ground hemisphere term + a downward-face AO
+   darkening.  This is the "baked vertex AO/colour ramp" the Pi gives away
+   for free, and it is what makes chunky boxes read as lit objects. */
+/* LAW learned the hard way here: the bake is a MODULATION, not a second
+   lighting pass.  MeshLambert already lights these surfaces with the real
+   sun + hemisphere; if the bake also computes a full light term the two
+   multiply, every bright surface clips to 1.0 and the whole level turns
+   into one saturated orange smear.  So `bake` only ramps the base colour
+   between ~0.62 (facing away / underside) and ~1.0 (facing the sun), with
+   a warm/cool tint either side — exactly the FC bakeColWarm shape.  That
+   ramp IS the baked vertex AO the Pi gives away for free.               */
+let BAKE_WARM = 1;
+function setBakeFromTheme(t) {
+  SUNDIR = t.sundir.slice();
+  const l = Math.hypot(SUNDIR[0], SUNDIR[1], SUNDIR[2]) || 1;
+  SUNDIR[0] /= l; SUNDIR[1] /= l; SUNDIR[2] /= l;
+  BAKE_WARM = t.bakeWarm == null ? 1 : t.bakeWarm;
+}
+function bake(nx, ny, nz, c, out) {
+  const d = nx * SUNDIR[0] + ny * SUNDIR[1] + nz * SUNDIR[2];
+  const s = d > 0 ? d : 0;
+  const up = ny * 0.5 + 0.5;
+  const k = 0.60 + 0.30 * s + 0.16 * up;
+  const wr = 1 + (d > 0 ? 0.055 * s : -0.055) * BAKE_WARM;
+  const wb = 1 + (d > 0 ? -0.045 * s : 0.075) * BAKE_WARM;
+  let v = c[0] * k * wr; out[0] = v > 1 ? 1 : v;
+  v = c[1] * k; out[1] = v > 1 ? 1 : v;
+  v = c[2] * k * wb; out[2] = v > 1 ? 1 : v;
+}
+/* Colours reach the vertex writer either as a 0xRRGGBB int (the palettes and
+   every prop builder) or as an already-unpacked [r,g,b].  C3 normalises both
+   through one scratch triple — no allocation in the build loop, and no
+   silent NaN colours when a builder forgets to call rgb().  */
+const _tc = [0, 0, 0];
+function C3(c) {
+  if (c == null) { _tc[0] = 1; _tc[1] = 0; _tc[2] = 1; return _tc; }   // scream, don't crash
+  if (typeof c !== 'number') return c;
+  _tc[0] = ((c >> 16) & 255) / 255; _tc[1] = ((c >> 8) & 255) / 255; _tc[2] = (c & 255) / 255;
+  return _tc;
+}
+function pushTri(md, ax, ay, az, bx, by, bz, cx, cy, cz, c) {
+  c = C3(c);
+  const ux = bx - ax, uy = by - ay, uz = bz - az;
+  const vx = cx - ax, vy = cy - ay, vz = cz - az;
+  let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  const l = Math.hypot(nx, ny, nz) || 1;
+  bake(nx / l, ny / l, nz / l, c, _bc);
+  md.p.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+  md.c.push(_bc[0], _bc[1], _bc[2], _bc[0], _bc[1], _bc[2], _bc[0], _bc[1], _bc[2]);
+}
+/* unbaked push (emissive windows, neon panels — they ARE the light source) */
+function pushTriRaw(md, ax, ay, az, bx, by, bz, cx, cy, cz, c) {
+  c = C3(c);
+  md.p.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+  md.c.push(c[0], c[1], c[2], c[0], c[1], c[2], c[0], c[1], c[2]);
+}
+/* axis-aligned box, optional Y-yaw; `emit` skips the bake (emissive faces) */
+function boxMD(md, cx, cy, cz, sx, sy, sz, c, ry, emit) {
+  const hx = sx / 2, hy = sy / 2, hz = sz / 2;
+  const cs = ry ? Math.cos(ry) : 1, sn = ry ? Math.sin(ry) : 0;
+  const X = (lx, lz) => cx + lx * cs + lz * sn;
+  const Z = (lx, lz) => cz - lx * sn + lz * cs;
+  const P = [];
+  for (let i = 0; i < 8; i++) {
+    const lx = (i & 1) ? hx : -hx, ly = (i & 2) ? hy : -hy, lz = (i & 4) ? hz : -hz;
+    P.push([X(lx, lz), cy + ly, Z(lx, lz)]);
+  }
+  const F = [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]];
+  const push = emit ? pushTriRaw : pushTri;
+  for (const f of F) {
+    const a = P[f[0]], b = P[f[1]], d = P[f[2]], e = P[f[3]];
+    push(md, a[0], a[1], a[2], b[0], b[1], b[2], d[0], d[1], d[2], c);
+    push(md, a[0], a[1], a[2], d[0], d[1], d[2], e[0], e[1], e[2], c);
+  }
+}
+/* a flat quad in XZ at height y (floors, rugs, lawn patches) */
+function quadY(md, x0, z0, x1, z1, y, c) {
+  pushTri(md, x0, y, z0, x0, y, z1, x1, y, z1, c);
+  pushTri(md, x0, y, z0, x1, y, z1, x1, y, z0, c);
+}
+/* an upright quad facing -Z or +Z (wall panels, signs) */
+function quadZ(md, x0, y0, x1, y1, z, c, emit) {
+  const push = emit ? pushTriRaw : pushTri;
+  push(md, x0, y0, z, x1, y0, z, x1, y1, z, c);
+  push(md, x0, y0, z, x1, y1, z, x0, y1, z, c);
+}
+/* cylinder / cone / prism about +Y (table legs, poles, chimneys, tree trunks) */
+function cylMD(md, cx, cy, cz, rt, rb, h, seg, c, cap) {
+  const y0 = cy - h / 2, y1 = cy + h / 2;
+  for (let i = 0; i < seg; i++) {
+    const a0 = i / seg * TAU, a1 = (i + 1) / seg * TAU;
+    const b0x = cx + Math.cos(a0) * rb, b0z = cz + Math.sin(a0) * rb;
+    const b1x = cx + Math.cos(a1) * rb, b1z = cz + Math.sin(a1) * rb;
+    const t0x = cx + Math.cos(a0) * rt, t0z = cz + Math.sin(a0) * rt;
+    const t1x = cx + Math.cos(a1) * rt, t1z = cz + Math.sin(a1) * rt;
+    if (rt > 0.0001) {
+      pushTri(md, b0x, y0, b0z, b1x, y0, b1z, t1x, y1, t1z, c);
+      pushTri(md, b0x, y0, b0z, t1x, y1, t1z, t0x, y1, t0z, c);
+    } else {
+      pushTri(md, b0x, y0, b0z, b1x, y0, b1z, cx, y1, cz, c);
+    }
+    if (cap !== false && rt > 0.0001) pushTri(md, cx, y1, cz, t0x, y1, t0z, t1x, y1, t1z, c);
+  }
+}
+/* low-poly hemisphere-ish dome (bushes, birdbath bowls, cat-bed cushions) */
+function domeMD(md, cx, cy, cz, r, ry, seg, rings, c) {
+  for (let j = 0; j < rings; j++) {
+    const p0 = j / rings * Math.PI / 2, p1 = (j + 1) / rings * Math.PI / 2;
+    const r0 = Math.cos(p0) * r, r1 = Math.cos(p1) * r;
+    const y0 = cy + Math.sin(p0) * ry, y1 = cy + Math.sin(p1) * ry;
+    for (let i = 0; i < seg; i++) {
+      const a0 = i / seg * TAU, a1 = (i + 1) / seg * TAU;
+      const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+      if (r1 > 0.001) {
+        pushTri(md, cx + c0 * r0, y0, cz + s0 * r0, cx + c1 * r0, y0, cz + s1 * r0, cx + c1 * r1, y1, cz + s1 * r1, c);
+        pushTri(md, cx + c0 * r0, y0, cz + s0 * r0, cx + c1 * r1, y1, cz + s1 * r1, cx + c0 * r1, y1, cz + s0 * r1, c);
+      } else {
+        pushTri(md, cx + c0 * r0, y0, cz + s0 * r0, cx + c1 * r0, y0, cz + s1 * r0, cx, y1, cz, c);
+      }
+    }
+  }
+}
+const MAT_WORLD_L = new THREE.MeshLambertMaterial({ vertexColors: true });
+const MAT_WORLD_B = new THREE.MeshBasicMaterial({ vertexColors: true });
+const MAT_WORLD = LOOK ? MAT_WORLD_L : MAT_WORLD_B;
+const MAT_FAR = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+function mdTris(md) { return md.p.length / 9; }
+function mdMesh(md, mat) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(md.p), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(md.c), 3));
+  const m2 = mat || MAT_WORLD;
+  if (m2.isMeshLambertMaterial) g.computeVertexNormals();
+  const m = new THREE.Mesh(g, m2);
+  /* LAW: static world RECEIVES the shadow and NEVER casts it. */
+  m.receiveShadow = !!(LOOK && m2.isMeshLambertMaterial);
+  m.castShadow = false;
+  m.matrixAutoUpdate = false;
+  m.updateMatrix();
+  return m;
+}
+
+/* ── the actor part kit (articulated rigs: cat, enemies, bosses) ─────
+   One shared Lambert material, every colour in vertex colours, each
+   articulated part merged down to ONE mesh = one draw call.  Same recipe
+   as the Powder Peak skier / FC golfer.                                */
+const MAT_ACTOR = LOOK ? new THREE.MeshLambertMaterial({ vertexColors: true })
+                       : new THREE.MeshBasicMaterial({ vertexColors: true });
+function vcPart(geo, colr) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  if (g !== geo) geo.dispose();
+  g.computeVertexNormals();
+  const n = g.attributes.position.count, a = new Float32Array(n * 3);
+  const c = new THREE.Color(colr);
+  for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return g;
+}
+const vcBox = (sx, sy, sz, c) => vcPart(new THREE.BoxGeometry(sx, sy, sz), c);
+const vcCyl = (rt, rb, h, seg, c, open) => vcPart(new THREE.CylinderGeometry(rt, rb, h, seg, 1, !!open), c);
+const vcSph = (r, w, h, c) => vcPart(new THREE.SphereGeometry(r, w, h), c);
+const vcCone = (r, h, seg, c) => vcPart(new THREE.ConeGeometry(r, h, seg), c);
+function vcMesh(parts, mat) {
+  let total = 0;
+  for (const p of parts) total += p.attributes.position.count;
+  const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
+  let o = 0;
+  for (const p of parts) {
+    pos.set(p.attributes.position.array, o);
+    nor.set(p.attributes.normal.array, o);
+    col.set(p.attributes.color.array, o);
+    o += p.attributes.position.count * 3;
+    p.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return new THREE.Mesh(g, mat || MAT_ACTOR);
+}
+function actorTris(m) { return m.geometry.attributes.position.count / 3; }
+
+/* ── sky dome (gradient, per theme) + the star field ────────────────── */
+let skyDome = null, starField = null;
+function buildSky(t) {
+  if (skyDome) { scene.remove(skyDome); skyDome.geometry.dispose(); skyDome = null; }
+  const md = MD();
+  const R = 420, SEG = 20, RINGS = t.sky.length - 1;
+  const cols = t.sky.map(rgb);
+  for (let j = 0; j < RINGS; j++) {
+    /* top band is the zenith, bottom band dips below the horizon */
+    const f0 = j / RINGS, f1 = (j + 1) / RINGS;
+    const y0 = Math.cos(f0 * Math.PI * 0.62) * R, y1 = Math.cos(f1 * Math.PI * 0.62) * R;
+    const r0 = Math.sin(f0 * Math.PI * 0.62) * R, r1 = Math.sin(f1 * Math.PI * 0.62) * R;
+    const c0 = cols[j], c1 = cols[j + 1];
+    for (let i = 0; i < SEG; i++) {
+      const a0 = i / SEG * TAU, a1 = (i + 1) / SEG * TAU;
+      const A = [Math.cos(a0) * r0, y0, Math.sin(a0) * r0], B = [Math.cos(a1) * r0, y0, Math.sin(a1) * r0];
+      const C = [Math.cos(a1) * r1, y1, Math.sin(a1) * r1], D = [Math.cos(a0) * r1, y1, Math.sin(a0) * r1];
+      if (r0 > 0.01) {
+        md.p.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+        md.c.push(c0[0], c0[1], c0[2], c0[0], c0[1], c0[2], c1[0], c1[1], c1[2]);
+        md.p.push(A[0], A[1], A[2], C[0], C[1], C[2], D[0], D[1], D[2]);
+        md.c.push(c0[0], c0[1], c0[2], c1[0], c1[1], c1[2], c1[0], c1[1], c1[2]);
+      } else {
+        md.p.push(0, y0, 0, C[0], C[1], C[2], D[0], D[1], D[2]);
+        md.c.push(c0[0], c0[1], c0[2], c1[0], c1[1], c1[2], c1[0], c1[1], c1[2]);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(md.p), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(md.c), 3));
+  skyDome = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false,
+  }));
+  skyDome.frustumCulled = false;
+  skyDome.renderOrder = -10;
+  scene.add(skyDome);
+}
+function buildStars(on) {
+  if (starField) { scene.remove(starField); starField.geometry.dispose(); starField.material.dispose(); starField = null; }
+  if (!on) return;
+  const N = LOWFX ? 160 : 300;
+  const pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+  let s = 20250926;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  for (let i = 0; i < N; i++) {
+    const a = rnd() * TAU, e = 0.10 + rnd() * 0.72, r = 360;
+    pos[i * 3] = Math.cos(a) * Math.cos(e) * r;
+    pos[i * 3 + 1] = Math.sin(e) * r;
+    pos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r;
+    const w = 0.55 + rnd() * 0.45, tint = rnd();
+    col[i * 3] = w * (tint > 0.7 ? 1 : 0.86);
+    col[i * 3 + 1] = w * 0.92;
+    col[i * 3 + 2] = w;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  starField = new THREE.Points(g, new THREE.PointsMaterial({
+    size: 2.4, sizeAttenuation: false, vertexColors: true, fog: false,
+    transparent: true, opacity: 0.95, depthWrite: false,
+  }));
+  starField.frustumCulled = false;
+  starField.renderOrder = -9;
+  scene.add(starField);
+}
+
+/* ── instanced additive glow billboards — ONE draw call for every glow ──
+   Design cap is ≤12 glows in view and CLAUDE.md caps additive sprites at
+   ~15 because each Sprite is its own draw call.  An InstancedMesh with a
+   billboarding vertex shader makes the whole glow layer cost exactly one,
+   so treats + checkpoints + neon + the laser dot can all glow at once. */
+const GLOW_MAX = 96;
+const glowMat = new THREE.ShaderMaterial({
+  uniforms: {},
+  vertexShader: [
+    'varying vec2 vQ; varying vec3 vC;',
+    'void main(){',
+    '  vQ = position.xy;',
+    '  vC = instanceColor;',
+    '  vec4 wp = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);',
+    '  vec4 mv = viewMatrix * wp;',
+    '  float s = length((instanceMatrix * vec4(1.0, 0.0, 0.0, 0.0)).xyz);',
+    '  mv.xy += position.xy * s;',
+    '  gl_Position = projectionMatrix * mv;',
+    '}'].join('\n'),
+  fragmentShader: [
+    'varying vec2 vQ; varying vec3 vC;',
+    'void main(){',
+    '  float d = length(vQ) * 2.0;',
+    '  float a = 1.0 - smoothstep(0.0, 1.0, d);',
+    '  a *= a;',
+    '  gl_FragColor = vec4(vC * a, a);',
+    '}'].join('\n'),
+  transparent: true, blending: THREE.AdditiveBlending,
+  depthWrite: false, depthTest: true, fog: false,
+});
+function makeGlowPool(n) {
+  const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), glowMat, n);
+  m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  m.frustumCulled = false;
+  m.count = 0;
+  m.renderOrder = 6;
+  scene.add(m);
+  return m;
+}
+const glowMesh = makeGlowPool(GLOW_MAX);
+const _AXIS_D = new THREE.Vector3(0.577, 0.577, 0.577);
+const _m4 = new THREE.Matrix4(), _q0 = new THREE.Quaternion();
+const _sc = new THREE.Vector3(1, 1, 1), _pv = new THREE.Vector3();
+/* per-frame writer: compact the live glows to the front and set .count */
+let glowN = 0;
+function glowReset() { glowN = 0; }
+function glowAdd(x, y, z, size, r, g, b) {
+  if (glowN >= GLOW_MAX) return;
+  _pv.set(x, y, z); _sc.set(size, size, size);
+  _m4.compose(_pv, _q0, _sc);
+  glowMesh.setMatrixAt(glowN, _m4);
+  const a = glowMesh.instanceColor.array;
+  a[glowN * 3] = r; a[glowN * 3 + 1] = g; a[glowN * 3 + 2] = b;
+  glowN++;
+}
+function glowFlush() {
+  glowMesh.count = glowN;
+  glowMesh.instanceMatrix.needsUpdate = true;
+  glowMesh.instanceColor.needsUpdate = true;
+}
+
+/* ── particle pools: sparks (additive billboards) + bits (chunky boxes) ──
+   Both are instanced, fully pooled, and written with zero per-frame
+   allocation.  Sparks reuse the glow shader; bits are lit boxes so kibble
+   pops and dust puffs read as real objects.                            */
+const SPARK_MAX = LOWFX ? 110 : 220;
+const BIT_MAX = LOWFX ? 70 : 140;
+const sparkMesh = makeGlowPool(SPARK_MAX);
+const bitMesh = (() => {
+  const m = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), MAT_ACTOR.clone(), BIT_MAX);
+  m.material.vertexColors = false;
+  m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(BIT_MAX * 3), 3);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  m.frustumCulled = false;
+  m.count = 0;
+  m.castShadow = false;
+  scene.add(m);
+  return m;
+})();
+
+function mkPool(n, extra) {
+  const a = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const o = { on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0, life: 1,
+      s0: 0.2, s1: 0, r: 1, g: 1, b: 1, grav: 0, spin: 0, rx: 0, ry: 0, orbit: 0, ox: 0, oy: 0, oz: 0 };
+    if (extra) extra(o);
+    a[i] = o;
+  }
+  return { a, n, next: 0 };
+}
+const sparks = mkPool(SPARK_MAX);
+const bits = mkPool(BIT_MAX);
+function poolTake(p) {
+  for (let k = 0; k < p.n; k++) {
+    const i = (p.next + k) % p.n;
+    if (!p.a[i].on) { p.next = (i + 1) % p.n; return p.a[i]; }
+  }
+  p.next = (p.next + 1) % p.n;
+  return p.a[p.next];          // oldest-wins; never allocates
+}
+function spark(x, y, z, vx, vy, vz, life, s0, s1, r, g, b, grav) {
+  const o = poolTake(sparks);
+  o.on = true; o.x = x; o.y = y; o.z = z; o.vx = vx; o.vy = vy; o.vz = vz;
+  o.t = 0; o.life = life; o.s0 = s0; o.s1 = s1; o.r = r; o.g = g; o.b = b;
+  o.grav = grav || 0; o.orbit = 0;
+  return o;
+}
+function bit(x, y, z, vx, vy, vz, life, s0, r, g, b, grav) {
+  const o = poolTake(bits);
+  o.on = true; o.x = x; o.y = y; o.z = z; o.vx = vx; o.vy = vy; o.vz = vz;
+  o.t = 0; o.life = life; o.s0 = s0; o.s1 = s0 * 0.4; o.r = r; o.g = g; o.b = b;
+  o.grav = grav == null ? 22 : grav;
+  o.rx = Math.random() * TAU; o.ry = Math.random() * TAU;
+  o.spin = (Math.random() - 0.5) * 18;
+  return o;
+}
+function stepPool(p, dt) {
+  const A = p.a;
+  for (let i = 0; i < p.n; i++) {
+    const o = A[i];
+    if (!o.on) continue;
+    o.t += dt;
+    if (o.t >= o.life) { o.on = false; continue; }
+    o.vy -= o.grav * dt;
+    o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
+    if (o.spin) { o.rx += o.spin * dt; o.ry += o.spin * 0.7 * dt; }
+  }
+}
+function drawPools() {
+  /* sparks ride the shared glow writer so they share its draw call slot */
+  let n = 0;
+  const SA = sparks.a;
+  for (let i = 0; i < sparks.n && n < SPARK_MAX; i++) {
+    const o = SA[i];
+    if (!o.on) continue;
+    const f = o.t / o.life, s = o.s0 + (o.s1 - o.s0) * f;
+    _pv.set(o.x, o.y, o.z); _sc.set(s, s, s);
+    _m4.compose(_pv, _q0, _sc);
+    sparkMesh.setMatrixAt(n, _m4);
+    const fade = 1 - f, a = sparkMesh.instanceColor.array;
+    a[n * 3] = o.r * fade; a[n * 3 + 1] = o.g * fade; a[n * 3 + 2] = o.b * fade;
+    n++;
+  }
+  sparkMesh.count = n;
+  sparkMesh.instanceMatrix.needsUpdate = true;
+  sparkMesh.instanceColor.needsUpdate = true;
+
+  let m = 0;
+  const BA = bits.a;
+  for (let i = 0; i < bits.n && m < BIT_MAX; i++) {
+    const o = BA[i];
+    if (!o.on) continue;
+    const f = o.t / o.life, s = o.s0 + (o.s1 - o.s0) * f;
+    _pv.set(o.x, o.y, o.z); _sc.set(s, s, s);
+    _q0.setFromAxisAngle(_AXIS_D, o.rx);
+    _m4.compose(_pv, _q0, _sc);
+    _q0.identity();
+    bitMesh.setMatrixAt(m, _m4);
+    const a = bitMesh.instanceColor.array;
+    a[m * 3] = o.r; a[m * 3 + 1] = o.g; a[m * 3 + 2] = o.b;
+    m++;
+  }
+  bitMesh.count = m;
+  bitMesh.instanceMatrix.needsUpdate = true;
+  bitMesh.instanceColor.needsUpdate = true;
+}
+
+/* ── the post pass: ONE fullscreen graded quad on a samples:0 RT ────── */
+let lookRT = null, postScene = null, postCam = null, postMat = null;
+function buildLookRT() {
+  if (lookRT) lookRT.dispose();
+  /* LAW: samples:0.  MSAA on a render target measured ~21fps on the Pi. */
+  lookRT = new THREE.WebGLRenderTarget(VW, VH, { depthBuffer: true, samples: 0 });
+  if (postMat) postMat.uniforms.tDiffuse.value = lookRT.texture;
+}
+if (LOOK) {
+  buildLookRT();
+  postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  postMat = new THREE.ShaderMaterial({
+    uniforms: {
+      tDiffuse: { value: lookRT.texture },
+      vig: { value: 0.30 }, sat: { value: 1.2 }, speed: { value: 0 },
+      lift: { value: new THREE.Vector3() },
+      gain: { value: new THREE.Vector3(1, 1, 1) },
+      gamma: { value: new THREE.Vector3(1, 1, 1) },
+    },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: [
+      'uniform sampler2D tDiffuse; uniform float vig, sat, speed;',
+      'uniform vec3 lift, gain, gamma; varying vec2 vUv;',
+      'void main(){',
+      '  vec2 uv = vUv;',
+      '  vec3 c = texture2D(tDiffuse, uv).rgb;',
+      /* zoomies-mode radial smear: three taps toward the centre, only when
+         the mode is live (speed>0) — free the rest of the time */
+      '  if (speed > 0.001) {',
+      '    vec2 d = (uv - 0.5) * speed * 0.055;',
+      '    c += texture2D(tDiffuse, uv - d).rgb * 0.45;',
+      '    c += texture2D(tDiffuse, uv - d * 2.0).rgb * 0.25;',
+      '    c /= 1.70;',
+      '  }',
+      '  c = max(vec3(0.0), (c - lift) * gain);',
+      '  c = pow(c, gamma);',
+      '  float g = dot(c, vec3(0.299, 0.587, 0.114));',
+      '  c = mix(vec3(g), c, sat);',
+      '  vec2 q = uv - 0.5;',
+      '  c *= 1.0 - vig * smoothstep(0.26, 0.74, dot(q, q) * 2.2);',
+      '  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);',
+      '}'].join('\n'),
+    depthTest: false, depthWrite: false,
+  });
+  postScene = new THREE.Scene();
+  postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat));
+}
+function applyTune() {
+  renderer.toneMappingExposure = LOOK_TUNE.exp;
+  if (!postMat) return;
+  postMat.uniforms.lift.value.fromArray(LOOK_TUNE.lift);
+  postMat.uniforms.gain.value.fromArray(LOOK_TUNE.gain);
+  postMat.uniforms.gamma.value.fromArray(LOOK_TUNE.gamma);
+  postMat.uniforms.sat.value = LOOK_TUNE.sat;
+  postMat.uniforms.vig.value = LOOK_TUNE.vig;
+}
+function applyTheme(name) {
+  const t = THEMES[name] || THEMES.house;
+  THEME = t;
+  setBakeFromTheme(t);
+  sunLight.color.setHex(t.sun);
+  sunLight.intensity = LOOK ? t.sunI : 1;
+  hemiLight.color.setHex(t.hemiSky);
+  hemiLight.groundColor.setHex(t.hemiGnd);
+  hemiLight.intensity = LOOK ? t.hemiI : 0.6;
+  ambLight.color.setHex(t.amb);
+  ambLight.intensity = LOOK ? t.ambI : 0.4;
+  fillLight.color.setHex(t.fill);
+  fillLight.intensity = LOOK ? t.fillI : 0.2;
+  scene.fog.color.setHex(t.fog);
+  scene.fog.near = t.fogNear; scene.fog.far = t.fogFar;
+  renderer.setClearColor(t.fog, 1);
+  LOOK_TUNE.exp = t.tune.exp; LOOK_TUNE.sat = t.tune.sat; LOOK_TUNE.vig = t.tune.vig;
+  LOOK_TUNE.lift = t.tune.lift.slice();
+  LOOK_TUNE.gain = t.tune.gain.slice();
+  LOOK_TUNE.gamma = t.tune.gamma.slice();
+  applyTune();
+  buildSky(t);
+  buildStars(name === 'night');
+}
+
+/* ── perf instrumentation ──────────────────────────────────────────────
+   renderer.info with autoReset off already counts the shadow pass, but the
+   design (and CLAUDE.md) want a count that cannot be wrong, so the GL
+   context is wrapped too.  TL.glCalls is the honest number. */
+const TL = { calls: 0, tris: 0, glCalls: 0, fps: 0, ms: 0, bake: 0 };
+(function wrapGL() {
+  const gl = renderer.getContext();
+  let n = 0;
+  const names = ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced'];
+  for (const nm of names) {
+    const f = gl[nm];
+    if (typeof f !== 'function') continue;
+    gl[nm] = function () { n++; return f.apply(gl, arguments); };
+  }
+  TL._glRead = () => { const v = n; n = 0; return v; };
+})();
+function casterInfo() {
+  let meshes = 0, tris = 0;
+  scene.traverse(o => {
+    if (o.isMesh && o.castShadow && o.visible && o.geometry && o.geometry.attributes.position) {
+      meshes++; tris += o.geometry.attributes.position.count / 3;
+    }
+  });
+  return { meshes, tris: Math.round(tris) };
+}
+</script>

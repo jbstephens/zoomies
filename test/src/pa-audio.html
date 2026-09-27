@@ -1,0 +1,504 @@
+<script>
+/* ═══════════════════ ZOOMIES! — pa  audio ══════════════════════════════
+   sfx-quality-bar (memory/sfx-quality-bar.md, born on Fairway Classic): the
+   CORE ACTION SOUNDS ARE NOT 8-BIT BEEPS.  Everything here is layered
+   noise + filter + envelope synthesis — a meow is a formant-swept filtered
+   saw, a pounce is a body thump plus a rumble, a purr is an LFO'd lowpass
+   noise bed under a low sine.
+
+   The context is created LAZILY on the first real input (browser autoplay
+   law, and the kiosk boots straight into the launcher).  Every sfx call is
+   a safe no-op until then, so game code never feature-checks.           */
+
+let AC = null, MASTER = null, NOISE = null;
+let ambGain = null, ambNext = 0, ambBar = 0, ambOn = false, duckT = 0;
+let purrNodes = null, droneNodes = null, zoomNodes = null, rollNodes = null;
+let kibStep = 0, kibLast = -9;
+
+function audioInit() {
+  if (AC) return AC;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    AC = new Ctx();
+  } catch (e) { AC = null; return null; }
+  MASTER = AC.createGain();
+  MASTER.gain.value = 0.62;
+  MASTER.connect(AC.destination);
+  /* one 2 s white-noise buffer, reused by every noise layer in the game */
+  const n = Math.floor(AC.sampleRate * 2);
+  NOISE = AC.createBuffer(1, n, AC.sampleRate);
+  const d = NOISE.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  ambGain = AC.createGain();
+  ambGain.gain.value = 0.0;
+  ambGain.connect(MASTER);
+  return AC;
+}
+function audioResume() { if (AC && AC.state === 'suspended') AC.resume(); }
+function T() { return AC ? AC.currentTime : 0; }
+
+/* ── primitives ────────────────────────────────────────────────────── */
+function noise(dur, gain, type, f0, f1, q, dest) {
+  if (!AC) return null;
+  const s = AC.createBufferSource();
+  s.buffer = NOISE;
+  s.loop = true;
+  s.playbackRate.value = 0.8 + Math.random() * 0.4;
+  const f = AC.createBiquadFilter();
+  f.type = type || 'bandpass';
+  const t = T();
+  f.frequency.setValueAtTime(Math.max(40, f0), t);
+  if (f1 && f1 !== f0) f.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+  f.Q.value = q == null ? 1 : q;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + Math.min(0.012, dur * 0.2));
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  s.connect(f); f.connect(g); g.connect(dest || MASTER);
+  s.start(t); s.stop(t + dur + 0.02);
+  return { s, f, g };
+}
+function osc(type, f0, f1, dur, gain, dest, detune, curve) {
+  if (!AC) return null;
+  const o = AC.createOscillator();
+  o.type = type;
+  const t = T();
+  o.frequency.setValueAtTime(Math.max(20, f0), t);
+  if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  if (detune) o.detune.value = detune;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + (curve || 0.01));
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g); g.connect(dest || MASTER);
+  o.start(t); o.stop(t + dur + 0.02);
+  return { o, g };
+}
+/* a formant-swept filtered saw pair — the mouth of the cat */
+function voice(dur, f0, f1, f2, form0, form1, gain, bright) {
+  if (!AC) return;
+  const t = T();
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + dur * 0.14);
+  g.gain.setValueAtTime(gain, t + dur * 0.55);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  const form = AC.createBiquadFilter();
+  form.type = 'bandpass';
+  form.Q.value = 3.2;
+  form.frequency.setValueAtTime(form0, t);
+  form.frequency.exponentialRampToValueAtTime(form1, t + dur * 0.62);
+  form.frequency.exponentialRampToValueAtTime(form0 * 0.8, t + dur);
+  const lp = AC.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = bright || 2600;
+  lp.Q.value = 0.9;
+  form.connect(lp); lp.connect(g); g.connect(MASTER);
+  for (const det of [-7, 6]) {
+    const o = AC.createOscillator();
+    o.type = 'sawtooth';
+    o.detune.value = det;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.40);
+    o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    o.connect(form);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  /* a whisper of breath on top keeps it animal, not synth */
+  noise(dur * 0.8, gain * 0.16, 'bandpass', form0 * 1.6, form1 * 1.4, 2.2);
+}
+/* FM bell — treat chimes and jingles */
+function bell(f, dur, gain, ratio) {
+  if (!AC) return;
+  const t = T();
+  const car = AC.createOscillator(); car.type = 'sine'; car.frequency.value = f;
+  const mod = AC.createOscillator(); mod.type = 'sine'; mod.frequency.value = f * (ratio || 2.01);
+  const mg = AC.createGain(); mg.gain.setValueAtTime(f * 2.4, t);
+  mg.gain.exponentialRampToValueAtTime(f * 0.05, t + dur);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0006, t + dur);
+  mod.connect(mg); mg.connect(car.frequency);
+  car.connect(g); g.connect(MASTER);
+  car.start(t); mod.start(t); car.stop(t + dur + 0.02); mod.stop(t + dur + 0.02);
+}
+
+/* ── the cat ───────────────────────────────────────────────────────── */
+function sfxMeow(p) {
+  if (!AC) return;
+  p = p || 1;
+  if (Math.random() < 0.5) voice(0.42, 420 * p, 640 * p, 380 * p, 760, 1500, 0.20, 3000);
+  else voice(0.55, 360 * p, 520 * p, 300 * p, 640, 1250, 0.19, 2400);
+}
+function sfxYowl() {
+  if (!AC) return;
+  voice(0.72, 780, 980, 240, 1250, 520, 0.30, 3600);
+  noise(0.5, 0.07, 'highpass', 1800, 700, 0.8);
+}
+function sfxChirp(p) {
+  if (!AC) return;
+  p = p || 1;
+  bell(1500 * p, 0.14, 0.13, 3.02);
+  bell(2100 * p, 0.10, 0.08, 2.01);
+  noise(0.05, 0.035, 'bandpass', 3400, 4600, 3);
+}
+function sfxLick() { if (AC) noise(0.16, 0.05, 'bandpass', 1500, 3200, 1.4); }
+function sfxPurrStart() {
+  if (!AC || purrNodes) return;
+  const t = T();
+  const out = AC.createGain(); out.gain.setValueAtTime(0, t);
+  out.gain.linearRampToValueAtTime(0.16, t + 0.7);
+  out.connect(MASTER);
+  const s = AC.createBufferSource(); s.buffer = NOISE; s.loop = true;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 190; lp.Q.value = 3.2;
+  const amp = AC.createGain(); amp.gain.value = 0.5;
+  const lfo = AC.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 26;
+  const lfoG = AC.createGain(); lfoG.gain.value = 0.42;
+  lfo.connect(lfoG); lfoG.connect(amp.gain);
+  s.connect(lp); lp.connect(amp); amp.connect(out);
+  const low = AC.createOscillator(); low.type = 'sine'; low.frequency.value = 48;
+  const lowG = AC.createGain(); lowG.gain.value = 0.10;
+  const lowAmp = AC.createGain(); lowAmp.gain.value = 1;
+  lfoG.connect(lowAmp.gain);
+  low.connect(lowG); lowG.connect(lowAmp); lowAmp.connect(out);
+  s.start(t); lfo.start(t); low.start(t);
+  purrNodes = { out, s, lfo, low };
+}
+function sfxPurrStop() {
+  if (!purrNodes || !AC) return;
+  const t = T();
+  purrNodes.out.gain.cancelScheduledValues(t);
+  purrNodes.out.gain.setValueAtTime(purrNodes.out.gain.value, t);
+  purrNodes.out.gain.exponentialRampToValueAtTime(0.0005, t + 0.4);
+  const n = purrNodes;
+  purrNodes = null;
+  setTimeout(() => { try { n.s.stop(); n.lfo.stop(); n.low.stop(); } catch (e) {} }, 700);
+}
+function sfxStep(v) {
+  if (!AC) return;
+  const k = WORLD.theme === 'night' ? 1.25 : WORLD.theme === 'yard' ? 0.8 : 1.0;
+  noise(0.055, 0.030 + v * 0.022, 'bandpass', 900 * k, 1700 * k, 1.6);
+  osc('sine', 150, 90, 0.05, 0.014 + v * 0.01);
+}
+function sfxJump(n) {
+  if (!AC) return;
+  noise(0.20, 0.055, 'bandpass', 420, 1600, 1.1);
+  if (n) { voice(0.20, 640, 880, 700, 1100, 1900, 0.10, 3200); noise(0.16, 0.04, 'highpass', 1400, 2600, 0.8); }
+  else osc('sine', 220, 360, 0.12, 0.05);
+}
+function sfxLand(v) {
+  if (!AC) return;
+  noise(0.09, 0.05 + v * 0.05, 'lowpass', 900, 300, 1.0);
+  osc('sine', 130, 62, 0.13, 0.05 + v * 0.06);
+}
+function sfxScratch() {
+  if (!AC) return;
+  noise(0.09, 0.075, 'bandpass', 2400, 5200, 2.6);
+  setTimeout(() => { if (AC) noise(0.09, 0.065, 'bandpass', 2800, 4400, 2.6); }, 165);
+}
+function sfxWhoosh(p) {
+  if (!AC) return;
+  noise(0.26 / (p || 1), 0.085, 'bandpass', 300 * (p || 1), 1900 * (p || 1), 1.1);
+}
+function sfxThump() {
+  if (!AC) return;
+  osc('sine', 150, 42, 0.26, 0.26);
+  noise(0.20, 0.13, 'lowpass', 1100, 200, 1.0);
+  osc('sine', 55, 32, 0.55, 0.13);      // the shockwave rumble
+}
+function sfxBoing() {
+  if (!AC) return;
+  osc('triangle', 180, 620, 0.22, 0.13);
+  osc('sine', 90, 300, 0.24, 0.07);
+  noise(0.12, 0.05, 'bandpass', 700, 1800, 1.6);
+}
+function sfxRollStart() {
+  if (!AC || rollNodes) return;
+  const t = T();
+  const out = AC.createGain(); out.gain.setValueAtTime(0, t);
+  out.gain.linearRampToValueAtTime(0.085, t + 0.16);
+  out.connect(MASTER);
+  const s = AC.createBufferSource(); s.buffer = NOISE; s.loop = true;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 520; bp.Q.value = 1.1;
+  s.connect(bp); bp.connect(out);
+  s.start(t);
+  rollNodes = { out, s };
+  noise(0.22, 0.075, 'bandpass', 380, 1500, 1.2);
+}
+function sfxRollStop() {
+  if (!rollNodes || !AC) return;
+  const t = T();
+  rollNodes.out.gain.cancelScheduledValues(t);
+  rollNodes.out.gain.setValueAtTime(rollNodes.out.gain.value, t);
+  rollNodes.out.gain.exponentialRampToValueAtTime(0.0005, t + 0.2);
+  const n = rollNodes; rollNodes = null;
+  setTimeout(() => { try { n.s.stop(); } catch (e) {} }, 400);
+}
+function sfxRollTick() { if (AC) noise(0.05, 0.022, 'bandpass', 700, 1200, 2.0); }
+function sfxHurt() {
+  if (!AC) return;
+  voice(0.34, 700, 900, 420, 1200, 620, 0.26, 3200);
+  noise(0.12, 0.09, 'lowpass', 1400, 400, 1.0);
+}
+function sfxFaint() {
+  if (!AC) return;
+  voice(0.85, 620, 420, 180, 1000, 420, 0.24, 2200);
+  for (let i = 0; i < 4; i++) setTimeout(() => bell(900 - i * 120, 0.24, 0.05, 2.4), i * 130);
+}
+function sfxFall() {
+  if (!AC) return;
+  voice(0.6, 820, 520, 200, 1400, 500, 0.24, 3000);
+  noise(0.5, 0.05, 'bandpass', 900, 200, 1.0);
+}
+function sfxKibble() {
+  if (!AC) return;
+  /* the Sonic ring trick: each rapid pickup steps the pitch up, then resets */
+  if (simT - kibLast < 0.42) kibStep = Math.min(8, kibStep + 1);
+  else kibStep = 0;
+  kibLast = simT;
+  const f = 1046 * Math.pow(2, kibStep / 12);
+  bell(f, 0.11, 0.075, 2.01);
+  noise(0.03, 0.02, 'bandpass', f * 2.4, f * 3, 3);
+}
+function sfxJingle() {
+  if (!AC) return;
+  const n = [784, 988, 1175, 1568];
+  for (let i = 0; i < n.length; i++) setTimeout(() => bell(n[i], 0.3, 0.10, 2.01), i * 85);
+}
+function sfxChime(p) {
+  if (!AC) return;
+  p = p || 1;
+  bell(880 * p, 0.55, 0.14, 2.01);
+  const arp = [1319, 1568, 1976, 2637];
+  for (let i = 0; i < arp.length; i++) setTimeout(() => bell(arp[i] * p, 0.22, 0.06, 3.01), 70 + i * 62);
+}
+function sfxZoomStart() {
+  if (!AC || zoomNodes) return;
+  const t = T();
+  const out = AC.createGain(); out.gain.setValueAtTime(0, t);
+  out.gain.linearRampToValueAtTime(0.10, t + 0.2);
+  out.connect(MASTER);
+  const s = AC.createBufferSource(); s.buffer = NOISE; s.loop = true;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.9;
+  const lfo = AC.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 5.5;
+  const lg = AC.createGain(); lg.gain.value = 500;
+  lfo.connect(lg); lg.connect(bp.frequency);
+  s.connect(bp); bp.connect(out);
+  s.start(t); lfo.start(t);
+  zoomNodes = { out, s, lfo };
+}
+function sfxZoomStop() {
+  if (!zoomNodes || !AC) return;
+  const t = T();
+  zoomNodes.out.gain.cancelScheduledValues(t);
+  zoomNodes.out.gain.setValueAtTime(zoomNodes.out.gain.value, t);
+  zoomNodes.out.gain.exponentialRampToValueAtTime(0.0005, t + 0.35);
+  const n = zoomNodes; zoomNodes = null;
+  setTimeout(() => { try { n.s.stop(); n.lfo.stop(); } catch (e) {} }, 600);
+}
+
+/* ── enemies ───────────────────────────────────────────────────────── */
+function sfxBonk(kind) {
+  if (!AC) return;
+  osc('triangle', 520, 180, 0.14, 0.13);
+  noise(0.10, 0.07, 'bandpass', 1400, 600, 1.4);
+  for (let i = 0; i < 3; i++) setTimeout(() => bell(1100 + i * 180, 0.16, 0.045, 2.4), 40 + i * 55);
+  if (kind === 'dog') setTimeout(() => sfxBark(0.85), 90);
+}
+function sfxCrate() {
+  if (!AC) return;
+  noise(0.16, 0.11, 'highpass', 900, 2600, 0.8);
+  osc('square', 260, 110, 0.10, 0.055);
+  osc('square', 390, 170, 0.08, 0.04);
+}
+function sfxVacRev() {
+  if (!AC) return;
+  osc('sawtooth', 70, 190, 0.5, 0.075, null, -8);
+  osc('sawtooth', 71, 192, 0.5, 0.06, null, 9);
+  noise(0.5, 0.05, 'lowpass', 400, 900, 5);
+}
+function sfxVacCharge() {
+  if (!AC) return;
+  osc('sawtooth', 190, 260, 1.1, 0.085, null, -7);
+  noise(1.0, 0.07, 'lowpass', 900, 500, 6);
+}
+function sfxVacDroneStart() {
+  if (!AC || droneNodes) return;
+  const t = T();
+  const out = AC.createGain(); out.gain.setValueAtTime(0, t);
+  out.gain.linearRampToValueAtTime(0.085, t + 1.0);
+  out.connect(MASTER);
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 340; lp.Q.value = 7;
+  lp.connect(out);
+  const oscs = [];
+  for (const f of [62, 63.7, 124.5]) {
+    const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+    const g = AC.createGain(); g.gain.value = f > 100 ? 0.12 : 0.3;
+    o.connect(g); g.connect(lp); o.start(t); oscs.push(o);
+  }
+  const s = AC.createBufferSource(); s.buffer = NOISE; s.loop = true;
+  const ng = AC.createGain(); ng.gain.value = 0.35;
+  s.connect(ng); ng.connect(lp); s.start(t);
+  droneNodes = { out, oscs, s };
+}
+function sfxVacDroneStop() {
+  if (!droneNodes || !AC) return;
+  const t = T();
+  droneNodes.out.gain.cancelScheduledValues(t);
+  droneNodes.out.gain.setValueAtTime(droneNodes.out.gain.value, t);
+  droneNodes.out.gain.exponentialRampToValueAtTime(0.0005, t + 0.8);
+  const n = droneNodes; droneNodes = null;
+  setTimeout(() => { try { for (const o of n.oscs) o.stop(); n.s.stop(); } catch (e) {} }, 1200);
+}
+function sfxThud(v) {
+  if (!AC) return;
+  osc('sine', 120, 45, 0.2 * (v || 1), 0.14 * (v || 1));
+  noise(0.14, 0.07 * (v || 1), 'lowpass', 800, 220, 1.0);
+}
+function sfxSpray() {
+  if (!AC) return;
+  noise(0.22, 0.075, 'highpass', 2600, 5200, 0.7);
+  noise(0.10, 0.04, 'bandpass', 900, 1600, 2.0);
+}
+function sfxSplat(v) {
+  if (!AC) return;
+  v = v || 1;
+  noise(0.16, 0.09 * v, 'lowpass', 1600, 300, 1.2);
+  osc('sine', 180, 60, 0.13, 0.06 * v);
+}
+function sfxToastPop() {
+  if (!AC) return;
+  osc('square', 620, 120, 0.09, 0.09);
+  noise(0.07, 0.06, 'bandpass', 1800, 900, 2.2);
+  setTimeout(() => { if (AC) osc('sine', 900, 1300, 0.1, 0.035); }, 40);
+}
+function sfxBark(p) {
+  if (!AC) return;
+  p = p || 1;
+  const f = 260 / p;
+  osc('square', f * 1.5, f * 0.7, 0.10, 0.10 / Math.sqrt(p));
+  osc('sawtooth', f, f * 0.55, 0.13, 0.07 / Math.sqrt(p));
+  noise(0.11, 0.07, 'bandpass', 1300 / p, 620 / p, 1.6);
+}
+function sfxPant() {
+  if (!AC) return;
+  noise(0.09, 0.035, 'bandpass', 700, 1500, 1.2);
+  setTimeout(() => { if (AC) noise(0.08, 0.028, 'bandpass', 1400, 700, 1.2); }, 120);
+}
+function sfxHowl(v) {
+  if (!AC) return;
+  v = v || 1;
+  voice(1.25, 300, 520, 360, 700, 1500, 0.20 * v, 2400);
+}
+function sfxCaw() {
+  if (!AC) return;
+  osc('sawtooth', 900, 520, 0.16, 0.075);
+  noise(0.16, 0.055, 'bandpass', 2200, 1200, 2.4);
+}
+function sfxFlutter() {
+  if (!AC) return;
+  for (let i = 0; i < 7; i++)
+    setTimeout(() => { if (AC) noise(0.06, 0.035, 'bandpass', 500 + Math.random() * 700, 1400, 1.2); }, i * 55);
+}
+function sfxGnome() {
+  if (!AC) return;
+  osc('triangle', 420, 160, 0.22, 0.07);
+  noise(0.14, 0.05, 'bandpass', 1200, 500, 1.4);
+}
+function sfxTrashThrow() {
+  if (!AC) return;
+  noise(0.24, 0.06, 'bandpass', 400, 1400, 1.0);
+  osc('triangle', 300, 520, 0.16, 0.045);
+}
+function sfxZap() {
+  if (!AC) return;
+  noise(0.07, 0.05, 'highpass', 3200, 6200, 0.8);
+  osc('square', 2400, 1600, 0.05, 0.03);
+}
+function sfxWind() { if (AC) noise(0.5, 0.05, 'bandpass', 480, 900, 0.7); }
+function sfxReflect() {
+  if (!AC) return;
+  osc('triangle', 1400, 2600, 0.10, 0.085);
+  noise(0.09, 0.055, 'bandpass', 2600, 4600, 2.4);
+  bell(1976, 0.18, 0.06, 2.01);
+}
+
+/* ── bosses / flow ─────────────────────────────────────────────────── */
+function sfxBossIntro() {
+  if (!AC) return;
+  duck(1.6);
+  for (const f of [110, 146, 174]) osc('sawtooth', f, f, 0.8, 0.07, null, -6);
+  noise(0.9, 0.07, 'lowpass', 500, 180, 1.4);
+  osc('sine', 55, 40, 1.2, 0.14);
+}
+function sfxBossHit() {
+  if (!AC) return;
+  duck(0.8);
+  osc('sine', 180, 46, 0.35, 0.24);
+  noise(0.28, 0.14, 'lowpass', 1800, 280, 1.0);
+  for (let i = 0; i < 4; i++) setTimeout(() => bell(1175 + i * 200, 0.25, 0.06, 2.4), 50 + i * 60);
+}
+function sfxFanfare() {
+  if (!AC) return;
+  duck(2.2);
+  const n = [523, 659, 784, 1047, 1319];
+  for (let i = 0; i < n.length; i++) {
+    setTimeout(() => {
+      if (!AC) return;
+      osc('triangle', n[i], n[i], 0.42, 0.10);
+      osc('sawtooth', n[i] / 2, n[i] / 2, 0.42, 0.045, null, -8);
+      bell(n[i] * 2, 0.4, 0.05, 2.01);
+    }, i * 135);
+  }
+  setTimeout(() => { if (AC) noise(0.5, 0.06, 'bandpass', 3000, 6000, 1.0); }, 680);
+}
+
+/* ── the quiet 2-bar ambient bed, one per theme, ducked under fanfares ── */
+const AMB = {
+  house: { root: 130.81, chord: [[0, 7, 12], [3, 10, 15], [5, 12, 17], [3, 10, 14]], type: 'triangle', lp: 900, g: 0.055 },
+  yard: { root: 146.83, chord: [[0, 7, 16], [2, 9, 14], [-3, 4, 12], [0, 7, 11]], type: 'triangle', lp: 1100, g: 0.05 },
+  night: { root: 110.00, chord: [[0, 3, 10], [-2, 5, 8], [-4, 3, 7], [-5, 2, 10]], type: 'sine', lp: 700, g: 0.06 },
+};
+function ambStart() {
+  if (!audioInit()) return;
+  ambOn = true;
+  ambNext = T() + 0.05;
+  ambBar = 0;
+  ambGain.gain.setTargetAtTime(1, T(), 0.8);
+}
+function ambStop() {
+  if (!AC) return;
+  ambOn = false;
+  ambGain.gain.setTargetAtTime(0, T(), 0.4);
+}
+function duck(sec) { duckT = Math.max(duckT, sec); }
+function audioTick(dt) {
+  if (!AC || !ambOn) return;
+  if (duckT > 0) {
+    duckT -= dt;
+    ambGain.gain.setTargetAtTime(duckT > 0 ? 0.26 : 1, T(), 0.25);
+  }
+  const A = AMB[WORLD.theme] || AMB.house;
+  const beat = 0.62;
+  while (ambNext < T() + 0.4) {
+    const t0 = ambNext;
+    const ch = A.chord[ambBar % A.chord.length];
+    for (let i = 0; i < ch.length; i++) {
+      const f = A.root * Math.pow(2, ch[i] / 12);
+      const o = AC.createOscillator(); o.type = A.type; o.frequency.value = f;
+      o.detune.value = (i - 1) * 4;
+      const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = A.lp;
+      const g = AC.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(A.g / ch.length, t0 + beat * 0.5);
+      g.gain.exponentialRampToValueAtTime(0.0004, t0 + beat * 1.9);
+      o.connect(lp); lp.connect(g); g.connect(ambGain);
+      o.start(t0); o.stop(t0 + beat * 2);
+    }
+    ambBar++;
+    ambNext += beat * 2;
+  }
+}
+</script>

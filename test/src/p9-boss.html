@@ -1,0 +1,465 @@
+<script>
+/* ═══════════════════ ZOOMIES! — p9  the three bosses ═══════════════════
+   One per level, THREE hits each, heavily telegraphed, and generous on
+   purpose: the charge is slow, the stun is long, the shockwave is jumpable
+   and the pigeon wave is a breather.  LAW (design §5): dogs are never hurt,
+   only befriended — Rex ends the fight as a friend sitting at the gate.  */
+
+let BOSS = null;
+
+function clearBoss() {
+  if (BOSS) {
+    if (BOSS.g) { scene.remove(BOSS.g); disposeTree(BOSS.g); }
+    if (BOSS.ring) { scene.remove(BOSS.ring); BOSS.ring.geometry.dispose(); }
+    if (BOSS.crown) { scene.remove(BOSS.crown); BOSS.crown.geometry.dispose(); }
+  }
+  BOSS = null;
+}
+function bossGateZ() { return (BOSS && BOSS.engaged && BOSS.alive) ? BOSS.gateZ : -1e9; }
+
+function makeRing(hex) {
+  const m = vcMesh([vcCyl(1.0, 1.0, 0.22, 22, hex, true)],
+    new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55,
+      depthWrite: false, side: THREE.DoubleSide }));
+  m.visible = false;
+  m.renderOrder = 4;
+  scene.add(m);
+  return m;
+}
+
+function spawnBoss(kind, z) {
+  clearBoss();
+  if (kind === 'vac') {
+    const g = new THREE.Group();
+    const body = mVac(3.8);
+    /* two big angry lamp eyes, sunk into the shell rather than a bar
+       hanging off the nose */
+    const eyes = vcMesh([
+      vcCyl(0.26, 0.26, 0.10, 10, 0xff5a4a).rotateX(Math.PI / 2).translate(-0.52, 0, 0),
+      vcCyl(0.26, 0.26, 0.10, 10, 0xff5a4a).rotateX(Math.PI / 2).translate(0.52, 0, 0),
+      vcBox(1.70, 0.16, 0.06, 0x2a2f38).translate(0, 0.30, 0.02),
+    ]);
+    eyes.position.set(0, 0.92, 1.80);
+    const button = vcMesh([
+      vcCyl(0.42, 0.46, 0.22, 12, 0xff3a2a).translate(0, 0.11, 0),
+      vcCyl(0.50, 0.50, 0.07, 12, 0xf2e8d8).translate(0, 0.02, 0),
+    ]);
+    button.position.set(0, 1.10, 0);
+    g.add(body, eyes, button);
+    g.position.set(0, 0, z + 8);
+    if (LOOK && FX.shadow) body.castShadow = true;
+    scene.add(g);
+    BOSS = {
+      k: 'vac', name: 'MOTHER VACUUM', x: 0, y: 0, z: z + 8, x0: 0, z0: z + 8,
+      hp: 3, alive: true, engaged: false, st: 0, stT: 2.2, t: 0,
+      g, body, eyes, button, ring: makeRing(0xffd08a), crown: null,
+      r: 1.9, h: 1.3, gateZ: z - 15, vx: 0, vz: 0, minis: 0,
+      winT: 0, hitFlash: 0, shake: 0,
+    };
+  } else if (kind === 'rex') {
+    const g = new THREE.Group();
+    const body = mDogBody(true);
+    const head = mDogHead(true);
+    head.position.set(0, 1.20, 0.80);
+    /* Rex is the BIG goofy dog — at 2.3 he read as a beige box 11 m away */
+    body.scale.setScalar(1.45); head.scale.setScalar(1.45); head.position.set(0, 1.74, 1.16);
+    const collar = vcMesh([vcCyl(0.50, 0.50, 0.18, 12, 0xd83a2a, true).translate(0, 0, 0)]);
+    collar.position.set(0, 1.52, 0.84);
+    collar.scale.setScalar(1.45);
+    g.add(body, head, collar);
+    g.position.set(0, 0, z + 9);
+    if (LOOK && FX.shadow) { body.castShadow = true; head.castShadow = true; }
+    scene.add(g);
+    BOSS = {
+      k: 'rex', name: 'REX THE ROOMMATE', x: 0, y: 0, z: z + 9, x0: 0, z0: z + 9,
+      hp: 3, alive: true, engaged: false, st: 0, stT: 1.9, t: 0,
+      g, body, head, collar, ring: makeRing(0xffe0a0), crown: null,
+      r: 2.1, h: 2.9, gateZ: z - 15, vx: 0, vz: 0,
+      noseX: 0, noseY: 2.2, noseZ: 0, ringR: 0, ringOn: false,
+      winT: 0, hitFlash: 0, friend: false, dig: 0,
+    };
+  } else {
+    const g = new THREE.Group();
+    const body = mCoon();
+    body.scale.set(1.9, 1.9, 1.9);
+    const crown = vcMesh([
+      vcCyl(0.28, 0.32, 0.20, 8, 0xffd24a, true).translate(0, 0.10, 0),
+      vcCone(0.07, 0.16, 4, 0xffe27a).translate(-0.20, 0.26, 0),
+      vcCone(0.07, 0.16, 4, 0xffe27a).translate(0.20, 0.26, 0),
+      vcCone(0.07, 0.20, 4, 0xffe27a).translate(0, 0.30, 0),
+      vcSph(0.06, 5, 4, 0xff5a7a).translate(0, 0.42, 0),
+    ]);
+    crown.position.set(0, 1.90, 0.05);
+    g.add(body, crown);
+    /* he holds court at the FRONT of the water tower deck, clear of the
+       tank, so the arena camera can actually see him */
+    g.position.set(0, 4.18, z + 5.4);
+    if (LOOK && FX.shadow) body.castShadow = true;
+    scene.add(g);
+    BOSS = {
+      k: 'coon', name: 'THE RACCOON KING', x: 0, y: 4.18, z: z + 5.4, x0: 0, z0: z + 5.4,
+      hp: 3, alive: true, engaged: false, st: 0, stT: 1.4, t: 0,
+      g, body, crownMesh: crown, ring: makeRing(0xffb0d8), crown: null,
+      r: 1.3, h: 2.0, gateZ: z - 15, vx: 0, vz: 0, throws: 0,
+      winT: 0, hitFlash: 0, peelT: 0,
+    };
+  }
+  return BOSS;
+}
+
+function bossReset() {
+  if (!BOSS || !BOSS.alive) return;
+  BOSS.st = 0; BOSS.stT = 2.2; BOSS.x = BOSS.x0; BOSS.z = BOSS.z0;
+  BOSS.vx = 0; BOSS.vz = 0; BOSS.ringOn = false;
+  if (BOSS.ring) BOSS.ring.visible = false;
+  if (BOSS.g) BOSS.g.position.set(BOSS.x, BOSS.y, BOSS.z);
+  for (const p of PROJ) { p.on = false; p.g.visible = false; }
+}
+
+function bossHit(verb) {
+  if (!BOSS || !BOSS.alive || BOSS.winT > 0) return false;
+  BOSS.hp--;
+  BOSS.hitFlash = 0.5;
+  sfxBossHit();
+  hudBoss();
+  for (let i = 0; i < 26; i++) {
+    const a = Math.random() * TAU;
+    spark(BOSS.x + (Math.random() - 0.5) * 2, BOSS.y + 1.2 + Math.random() * 1.2, BOSS.z + (Math.random() - 0.5) * 2,
+      Math.cos(a) * 6, 3 + Math.random() * 5, Math.sin(a) * 6, 0.85, 0.34, 0.02, 1.0, 0.9, 0.5, 8);
+  }
+  kibblePop(BOSS.x, BOSS.y + 1.0, BOSS.z - 1.5, 6);
+  if (BOSS.hp <= 0) { bossDefeat(); return true; }
+  banner(BOSS.hp === 2 ? 'ONE DOWN!' : 'TWO DOWN!', BOSS.hp + ' to go');
+  /* between-hit phase: mini-vacs / a slam reset / a pigeon wave */
+  if (BOSS.k === 'vac') {
+    BOSS.st = 5; BOSS.stT = 1.3;
+    for (const dx of [-3.2, 3.2]) addEnt('vac', BOSS.x + dx, 0, BOSS.z - 4.5, { rng: 2.6 });
+    BOSS.minis += 2;
+  } else if (BOSS.k === 'rex') {
+    BOSS.st = 0; BOSS.stT = 1.7;
+  } else {
+    BOSS.st = 2; BOSS.stT = 3.0;
+    for (let i = 0; i < 5; i++) {
+      const e = addEnt('pigeon', BOSS.x + (i - 2) * 1.2, BOSS.y + 0.6, BOSS.z - 2, { ph: i * 1.3 });
+      e.st = 1; e.stT = 3.0; e.y0 = e.y;
+    }
+    sfxFlutter();
+  }
+  return true;
+}
+
+function bossDefeat() {
+  BOSS.alive = true;                 // still on stage — it plays its exit
+  BOSS.winT = BOSS.k === 'rex' ? 3.6 : 3.0;
+  BOSS.st = 90;
+  BOSS.ringOn = false;
+  if (BOSS.ring) BOSS.ring.visible = false;
+  for (const p of PROJ) { p.on = false; p.g.visible = false; }
+  for (const e of ENTS) if (e.alive && e.bonk && Math.abs(e.z - BOSS.z) < 30) killEnt(e);
+  if (BOSS.k === 'vac') { banner('MOTHER DOWN!', 'the carpet is yours'); sfxFanfare(); }
+  else if (BOSS.k === 'rex') { banner('REX IS YOUR FRIEND!', 'he is howling you a fanfare'); sfxHowl(); }
+  else { banner('LONG LIVE THE CAT!', 'the crown is yours'); sfxFanfare(); }
+  for (let i = 0; i < 40; i++) {
+    const a = Math.random() * TAU;
+    bit(BOSS.x, BOSS.y + 1.6, BOSS.z, Math.cos(a) * 6, 5 + Math.random() * 6, Math.sin(a) * 6,
+      2.0, 0.13, 0.5 + Math.random() * 0.5, 0.5 + Math.random() * 0.5, 0.3 + Math.random() * 0.7, 13);
+  }
+}
+
+/* pounce / roll / scratch / whip contact — each boss accepts exactly the
+   verb its loop teaches */
+function bossMeleeHit(x, y, z, r, verb) {
+  if (!BOSS || !BOSS.alive || BOSS.winT > 0) return;
+  if (BOSS.k === 'vac') {
+    if (BOSS.st !== 4) return;                         // only while stunned
+    if (verb !== 'pounce') return;                     // POUNCE the button
+    const bx = BOSS.x, bz = BOSS.z, by = BOSS.y + 0.96;
+    if (Math.hypot(bx - x, bz - z) < r + 1.0 && y < by + 2.2) {
+      if (bossHit(verb)) CAT.vy = 9.5;      // pounce BOUNCES off the big ones
+    }
+  } else if (BOSS.k === 'rex') {
+    if (BOSS.st !== 3) return;                         // only while panting
+    if (Math.hypot(BOSS.noseX - x, BOSS.noseZ - z) < r + 1.1 &&
+        y > BOSS.noseY - 1.3 && y < BOSS.noseY + 1.6) bossHit(verb);
+  }
+  /* the King is out of reach on purpose — he only takes reflected trash */
+}
+function bossWhip() { /* reflect is the King's answer; the whip itself is not */ }
+
+function bossProjHit(p) {
+  if (!BOSS || !BOSS.alive || BOSS.winT > 0 || p.own !== 1) return;
+  if (BOSS.k !== 'coon') return;
+  if (Math.hypot(BOSS.x - p.x, BOSS.z - p.z) < 2.0 && p.y > BOSS.y - 0.4 && p.y < BOSS.y + 2.6) {
+    p.on = false; p.g.visible = false;
+    bossHit('reflect');
+  }
+}
+
+/* ── the loops ─────────────────────────────────────────────────────── */
+function updateBoss(dt) {
+  if (!BOSS) return;
+  const B = BOSS;
+  B.t += dt;
+  if (B.hitFlash > 0) B.hitFlash -= dt;
+
+  if (!B.engaged && B.winT <= 0) {
+    if (CAT.z > B.gateZ + 11) {
+      B.engaged = true;
+      hudBoss(true);
+      banner(B.name + '!', B.k === 'vac' ? 'pounce the big red button'
+        : B.k === 'rex' ? 'bounce off the doghouse and bop his nose'
+        : 'tail-whip his trash right back');
+      sfxBossIntro();
+      if (B.k === 'vac') sfxVacDroneStart();
+    }
+    /* idle sway so he reads as alive before the fight starts */
+    if (B.g) B.g.position.y = B.y + Math.sin(B.t * 1.4) * 0.03;
+    return;
+  }
+
+  if (B.winT > 0) {
+    B.winT -= dt;
+    if (B.k === 'vac') {
+      B.g.rotation.y += dt * 9;
+      B.g.rotation.z = smooth(B.g.rotation.z, 0.9, 0.04, dt);
+      B.g.position.y = smooth(B.g.position.y, B.y - 0.25, 0.05, dt);
+      if ((simTicks % 9) === 0) dizzyStars(B.x, B.y + 2.2, B.z, 1);
+    } else if (B.k === 'rex') {
+      B.g.rotation.z = smooth(B.g.rotation.z, 1.35, 0.05, dt);
+      B.g.position.y = smooth(B.g.position.y, B.y - 0.3, 0.05, dt);
+      if (B.head) B.head.rotation.x = Math.sin(B.t * 3) * 0.12;
+      if ((simTicks % 26) === 0) sfxHowl(0.6);
+    } else {
+      /* he slips on his own banana peel and tumbles into the dumpster */
+      B.g.rotation.x += dt * 7;
+      B.g.position.x = smooth(B.g.position.x, 0, 0.05, dt);
+      B.g.position.z = smooth(B.g.position.z, B.z + 6, 0.03, dt);
+      B.g.position.y = smooth(B.g.position.y, 0.9, 0.04, dt);
+      if ((simTicks % 11) === 0) dizzyStars(B.g.position.x, B.g.position.y + 1.6, B.g.position.z, 1);
+    }
+    if (B.winT <= 0) {
+      B.alive = false;
+      if (B.k === 'vac') sfxVacDroneStop();
+      if (B.k === 'rex') {
+        /* Rex becomes a friend: he trots to the exit gate and sits, wagging */
+        B.friend = true;
+        B.g.rotation.set(0, Math.PI, 0);
+        B.g.position.set(4.6, 0, WORLD.length - 8);
+        if (B.head) B.head.rotation.set(0, 0, 0);
+      } else {
+        B.g.visible = false;
+      }
+      hudBoss(false);
+      levelCleared();
+    }
+    return;
+  }
+
+  if (B.k === 'vac') updateVacBoss(dt);
+  else if (B.k === 'rex') updateRexBoss(dt);
+  else updateKingBoss(dt);
+}
+
+/* ── 1. MOTHER VACUUM ──────────────────────────────────────────────── */
+function updateVacBoss(dt) {
+  const B = BOSS;
+  B.stT -= dt;
+  B.eyes.visible = true;
+  switch (B.st) {
+    case 0: {                                   // SUCK — pulls kibble in
+      hudBossHint('she is inhaling the kibble');
+      B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.06, dt);
+      for (let i = 0; i < KIBS.length; i++) {
+        const k = KIBS[i];
+        if (!k.on) continue;
+        if (Math.abs(k.z - B.z) > 20) continue;
+        const d = Math.hypot(k.x - B.x, k.z - B.z) || 1;
+        if (d < 18) {
+          k.x -= (k.x - B.x) / d * 3.2 * dt; k.z -= (k.z - B.z) / d * 3.2 * dt;
+          if (d < 1.6) k.on = false;
+        }
+      }
+      const d = Math.hypot(CAT.x - B.x, CAT.z - B.z) || 1;
+      if (d < 13) { CAT.vx -= (CAT.x - B.x) / d * 3.4 * dt; CAT.vz -= (CAT.z - B.z) / d * 3.4 * dt; }
+      if ((simTicks % 7) === 0)
+        spark(B.x + (Math.random() - 0.5) * 8, B.y + 0.4 + Math.random() * 1.4, B.z - 5 - Math.random() * 6,
+          0, 0.4, 5.5, 0.6, 0.16, 0.02, 0.85, 0.85, 0.95, 0);
+      /* drift back toward the middle of her arena between charges, so a long
+         fight does not end with her parked against the entry gate */
+      B.x = smooth(B.x, B.x0, 0.015, dt);
+      B.z = smooth(B.z, B.z0, 0.015, dt);
+      if (B.stT <= 0) { B.st = 1; B.stT = 1.55; sfxVacRev(); }
+      break;
+    }
+    case 1: {                                   // TELEGRAPH — rattle + glow
+      hudBossHint('get out of the lane!');
+      B.shake = 1;
+      B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.14, dt);
+      if (B.stT <= 0) {
+        B.st = 2; B.stT = 1.7; B.shake = 0;
+        const d = Math.hypot(CAT.x - B.x, CAT.z - B.z) || 1;
+        B.vx = (CAT.x - B.x) / d * 10.5; B.vz = (CAT.z - B.z) / d * 10.5;
+        sfxVacCharge();
+      }
+      break;
+    }
+    case 2: {                                   // CHARGE
+      hudBossHint('');
+      B.x += B.vx * dt; B.z += B.vz * dt;
+      const hw = corrHW(B.z) - 2.0;
+      if (Math.abs(B.x) > hw || B.z < B.gateZ + 3 || B.z > B.z0 + 11 || B.stT <= 0) {
+        B.st = 3; B.stT = 0.45;
+        B.x = clamp(B.x, -hw, hw);
+        sfxThump(1.6);
+        for (let i = 0; i < 22; i++) {
+          const a = Math.random() * TAU;
+          bit(B.x, 0.4, B.z, Math.cos(a) * 5, 3 + Math.random() * 4, Math.sin(a) * 5,
+            1.0, 0.16, 0.6, 0.6, 0.66, 20);
+        }
+      }
+      break;
+    }
+    case 3: {                                   // CRASH
+      B.g.rotation.z = Math.sin(B.t * 44) * 0.10;
+      if (B.stT <= 0) { B.st = 4; B.stT = 3.3; }
+      break;
+    }
+    case 4: {                                   // STUNNED — the button is up
+      hudBossHint('POUNCE the red button!');
+      B.g.rotation.z = smooth(B.g.rotation.z, 0, 0.08, dt);
+      B.button.position.y = 1.10 + 0.60 + Math.sin(B.t * 5) * 0.06;
+      B.button.scale.setScalar(1.5);
+      if ((simTicks % 15) === 0) dizzyStars(B.x, B.y + 2.3, B.z, 1);
+      if (B.stT <= 0) { B.st = 0; B.stT = 2.2; }
+      break;
+    }
+    case 5: {                                   // recover after taking a hit
+      hudBossHint('she brought friends');
+      if (B.stT <= 0) { B.st = 0; B.stT = 2.2; }
+      break;
+    }
+  }
+  if (B.st !== 4) { B.button.position.y = 1.10; B.button.scale.setScalar(1); }
+  B.g.position.set(B.x + (B.shake ? (Math.random() - 0.5) * 0.12 : 0), B.y, B.z);
+  if (B.st !== 3) B.g.rotation.z = smooth(B.g.rotation.z, 0, 0.1, dt);
+  /* contact hurts unless the cat is mid-pounce onto the button */
+  if (B.st !== 4 && Math.hypot(CAT.x - B.x, CAT.z - B.z) < B.r + CAT_R + 0.3 &&
+      CAT.y < B.y + B.h + 0.4) hurtCat(B.x, B.z, 9);
+}
+
+/* ── 2. REX THE ROOMMATE ───────────────────────────────────────────── */
+function updateRexBoss(dt) {
+  const B = BOSS;
+  B.stT -= dt;
+  /* the nose is the hitbox; it follows the head's live pose */
+  const fy = B.g.rotation.y;
+  B.noseX = B.x + Math.sin(fy) * 1.55;
+  B.noseZ = B.z + Math.cos(fy) * 1.55;
+  switch (B.st) {
+    case 0: {                                   // DIG
+      hudBossHint('he is digging — get to the doghouse');
+      B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z) + Math.PI, 0.05, dt);
+      B.dig += dt * 9;
+      if (B.head) B.head.rotation.x = 0.4 + Math.sin(B.dig) * 0.30;
+      B.g.position.y = B.y + Math.abs(Math.sin(B.dig * 0.5)) * 0.06;
+      if ((simTicks % 9) === 0)
+        bit(B.x + Math.sin(fy) * 1.4, 0.3, B.z + Math.cos(fy) * 1.4,
+          (Math.random() - 0.5) * 3, 2 + Math.random() * 3, -1 - Math.random() * 3,
+          0.8, 0.13, 0.49, 0.38, 0.26, 20);
+      B.noseY = 1.35;
+      if (B.stT <= 0) { B.st = 1; B.stT = 0.85; sfxBark(0.55); }
+      break;
+    }
+    case 1: {                                   // SLAM telegraph — he rears up
+      hudBossHint('JUMP the shockwave!');
+      B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.10, dt);
+      const f = 1 - B.stT / 0.85;
+      B.g.rotation.x = -f * 0.55;
+      B.g.position.y = B.y + f * 0.55;
+      if (B.head) B.head.rotation.x = -f * 0.3;
+      B.noseY = 3.0;
+      if (B.stT <= 0) {
+        B.st = 2; B.stT = 0.28;
+        B.ringOn = true; B.ringR = 0.8;
+        sfxThump(1.9);
+      }
+      break;
+    }
+    case 2: {                                   // SLAM
+      B.g.rotation.x = smooth(B.g.rotation.x, 0.12, 0.25, dt);
+      B.g.position.y = smooth(B.g.position.y, B.y, 0.25, dt);
+      if (B.stT <= 0) { B.st = 3; B.stT = 3.1; }
+      break;
+    }
+    case 3: {                                   // PANT — the nose is reachable
+      hudBossHint('bop his nose!');
+      B.g.rotation.x = smooth(B.g.rotation.x, 0.28, 0.06, dt);
+      B.g.position.y = smooth(B.g.position.y, B.y - 0.10, 0.06, dt);
+      if (B.head) {
+        B.head.rotation.x = 0.30 + Math.sin(B.t * 11) * 0.06;
+        B.head.position.y = 1.20 - 0.22;
+      }
+      B.noseY = 2.15;
+      if ((simTicks % 30) === 0) sfxPant();
+      /* the BOP: any airborne contact with the nose counts, which is what
+         "bounce off the doghouse roof and bop his nose" actually means —
+         a kid should not have to also remember an attack button mid-air */
+      if (!CAT.grounded && Math.hypot(BOSS.noseX - CAT.x, BOSS.noseZ - CAT.z) < 1.5 &&
+          CAT.y > BOSS.noseY - 1.2 && CAT.y < BOSS.noseY + 1.7) {
+        CAT.vy = Math.max(CAT.vy, 7.0);
+        bossHit('bop');
+        break;
+      }
+      if (B.stT <= 0) { B.st = 0; B.stT = 1.9; if (B.head) B.head.position.y = 1.74; }
+      break;
+    }
+  }
+  if (B.st !== 3 && B.head) B.head.position.y = 1.74;
+  B.g.position.x = B.x; B.g.position.z = B.z;
+
+  /* the shockwave: a growing ring you jump over.  Grounded = wet paws. */
+  if (B.ringOn) {
+    B.ringR += 12.5 * dt;
+    B.ring.visible = true;
+    B.ring.position.set(B.x, 0.14, B.z);
+    B.ring.scale.set(B.ringR, 1, B.ringR);
+    B.ring.material.opacity = Math.max(0, 0.6 - B.ringR / 16);
+    const d = Math.hypot(CAT.x - B.x, CAT.z - B.z);
+    if (Math.abs(d - B.ringR) < 1.0 && CAT.grounded) hurtCat(B.x, B.z, 7.5);
+    if (B.ringR > 15) { B.ringOn = false; B.ring.visible = false; }
+  }
+  /* body contact is a shove, not a bite — Rex is a goof */
+  if (Math.hypot(CAT.x - B.x, CAT.z - B.z) < B.r + CAT_R + 0.4 && CAT.y < B.y + 1.4 && B.st !== 3)
+    hurtCat(B.x, B.z, 8.5);
+}
+
+/* ── 3. THE RACCOON KING ───────────────────────────────────────────── */
+function updateKingBoss(dt) {
+  const B = BOSS;
+  B.stT -= dt;
+  B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.08, dt);
+  B.g.position.y = B.y + Math.sin(B.t * 2.2) * 0.05;
+  switch (B.st) {
+    case 0: {                                   // THROW — reflect it back
+      hudBossHint('tail-whip his trash back at him');
+      if (B.stT <= 0) {
+        B.stT = 1.55;
+        B.throws++;
+        const d = Math.hypot(CAT.x - B.x, CAT.z - B.z) || 1;
+        const p = fireProj('trash', B.x, B.y + 1.3, B.z,
+          (CAT.x - B.x) / d * 7.5, 3.0, (CAT.z - B.z) / d * 7.5, B);
+        if (p) p.src = B;
+        sfxTrashThrow();
+        B.body.rotation.x = -0.28;
+      } else B.body.rotation.x = smooth(B.body.rotation.x, 0, 0.1, dt);
+      break;
+    }
+    case 2: {                                   // PIGEON WAVE — the breather
+      hudBossHint('pigeons! keep moving');
+      if (B.stT <= 0) { B.st = 0; B.stT = 1.0; }
+      break;
+    }
+  }
+  /* the King's own tower deck is out of the cat's reach: nothing to touch */
+}
+</script>
