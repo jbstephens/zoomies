@@ -170,9 +170,26 @@ body.tp-on #p2Tag { bottom: 176px; }
 #title .p2h { margin-top: 18px; font-size: 21px; letter-spacing: 3px; color: #ff9d9d; }
 #title .bestline { margin-top: 26px; font-size: 19px; letter-spacing: 2px; color: rgba(255,238,208,0.72); }
 
-/* LEVEL SELECT — three cards, pad-reachable, the selected one lifts */
+/* LEVEL SELECT — pad-reachable cards, the selected one lifts.  Three cards
+   sit in one comfortable row; from FOUR up (THE BIG OUTSIDE) the grid goes
+   to the compact `many` size and wraps, so seven still fit on a 720p TV. */
 #select .head { font-size: 40px; font-weight: 800; letter-spacing: 6px; color: #ffce5a; text-shadow: 0 4px 0 rgba(28,12,34,0.9); }
-#cards { margin-top: 28px; display: flex; gap: 26px; }
+#cards { margin-top: 28px; display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; max-width: 1248px; }
+/* THE BIG OUTSIDE: SEVEN romps.  max-width is what pins the compact grid to
+   FOUR cards per row — which has to match CARD_ROW in pb-flow, because that
+   is the stride up/down paging walks.  4 + 3 at 292 px tall clears 720p with
+   the head and the foot on screen (measured in test/shots2/40-select-*.png). */
+#cards.many { gap: 14px; margin-top: 12px; max-width: 1002px; }
+#cards.many + .foot { margin-top: 16px; }
+#cards.many .card { width: 234px; height: 292px; padding: 11px 11px 12px; }
+#cards.many .card .num { font-size: 15px; }
+#cards.many .card .nm { font-size: 21px; min-height: 48px; }
+#cards.many .card .sub { font-size: 13px; min-height: 17px; }
+#cards.many .card .art { width: 212px; height: 80px; margin-top: 7px; }
+#cards.many .card .row { font-size: 14px; margin-top: 7px; }
+#cards.many .card .row .mice .ms { width: 19px; height: 19px; }
+#cards.many .card .row .best { font-size: 13px; }
+#cards.many .card .lockTag { font-size: 13px; min-height: 16px; padding-top: 6px; }
 .card {
   width: 306px; height: 372px; padding: 16px 16px 18px; text-align: left;
   display: flex; flex-direction: column;

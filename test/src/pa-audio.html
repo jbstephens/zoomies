@@ -425,6 +425,278 @@ function sfxReflect() {
   bell(1976, 0.18, 0.06, 2.01);
 }
 
+/* ── THE BIG OUTSIDE: the market, the two new verbs, SIR MOPSALOT ─────
+   Same bar as everything else (memory/sfx-quality-bar.md): layered
+   noise + filter + envelope, no 8-bit beeps on anything the player does. */
+function sfxVentHiss() {
+  if (!AC) return;
+  noise(0.75, 0.055, 'bandpass', 300, 1150, 0.8);
+  noise(0.5, 0.03, 'highpass', 2200, 3400, 0.6);
+  osc('sine', 78, 92, 0.6, 0.035);
+}
+function sfxFrost() {
+  if (!AC) return;
+  noise(0.35, 0.045, 'highpass', 3000, 5600, 0.7);
+  bell(2400, 0.30, 0.035, 3.01);
+}
+function sfxZipGrab() {
+  if (!AC) return;
+  /* a metal trolley snapping onto a taut line: click + rope creak */
+  noise(0.06, 0.09, 'bandpass', 2600, 1400, 3.0);
+  osc('triangle', 900, 420, 0.10, 0.07);
+  noise(0.28, 0.04, 'bandpass', 520, 320, 2.4);
+}
+function sfxZipRun() {
+  if (!AC) return;
+  noise(0.22, 0.045, 'bandpass', 1500, 2400, 2.2);
+  osc('sawtooth', 320, 360, 0.20, 0.022, null, -6);
+}
+function sfxZipDrop() {
+  if (!AC) return;
+  noise(0.22, 0.07, 'bandpass', 900, 320, 1.1);
+  osc('sine', 300, 180, 0.16, 0.05);
+}
+/* the supermarket PA: the ding-dong, then the gag lands as a HUD banner */
+function sfxPA() {
+  if (!AC) return;
+  duck(1.1);
+  noise(0.04, 0.03, 'bandpass', 1800, 1200, 2.0);        // the speaker click
+  bell(1175, 0.50, 0.10, 2.01);
+  setTimeout(() => { if (AC) bell(880, 0.65, 0.09, 2.01); }, 190);
+  setTimeout(() => { if (AC) noise(0.30, 0.02, 'bandpass', 700, 1500, 1.2); }, 380);
+}
+/* SIR MOPSALOT: wet rubber on tile.  A squeak is a pair of detuned saws
+   swept UP through a resonant bandpass with a wet noise layer on top. */
+function sfxMopSqueak(p) {
+  if (!AC) return;
+  p = p || 1;
+  const t = T();
+  const bp = AC.createBiquadFilter();
+  bp.type = 'bandpass'; bp.Q.value = 7.5;
+  bp.frequency.setValueAtTime(700 * p, t);
+  bp.frequency.exponentialRampToValueAtTime(2300 * p, t + 0.26);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.16, t + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + 0.34);
+  bp.connect(g); g.connect(MASTER);
+  for (const det of [-9, 8]) {
+    const o = AC.createOscillator();
+    o.type = 'sawtooth'; o.detune.value = det;
+    o.frequency.setValueAtTime(220 * p, t);
+    o.frequency.exponentialRampToValueAtTime(520 * p, t + 0.30);
+    o.connect(bp); o.start(t); o.stop(t + 0.36);
+  }
+  noise(0.20, 0.035, 'bandpass', 1600 * p, 3200 * p, 2.4);
+}
+function sfxMopWind() {
+  if (!AC) return;
+  osc('sawtooth', 90, 250, 1.25, 0.075, null, -7);
+  osc('sawtooth', 91, 252, 1.25, 0.06, null, 8);
+  noise(1.15, 0.05, 'lowpass', 500, 1300, 5);
+}
+function sfxMopSpin() {
+  if (!AC) return;
+  noise(0.45, 0.09, 'bandpass', 700, 1900, 1.2);
+  osc('sawtooth', 250, 300, 0.9, 0.06, null, -6);
+}
+function sfxMopSwish() {
+  if (!AC) return;
+  noise(0.16, 0.06, 'bandpass', 500, 2200, 1.4);
+}
+function sfxMopSlip() {
+  if (!AC) return;
+  /* the squeak DIVES, then a wet splat, then he lands on his bucket */
+  const t = T();
+  const bp = AC.createBiquadFilter();
+  bp.type = 'bandpass'; bp.Q.value = 6.5;
+  bp.frequency.setValueAtTime(2400, t);
+  bp.frequency.exponentialRampToValueAtTime(380, t + 0.42);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.18, t + 0.04);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + 0.5);
+  bp.connect(g); g.connect(MASTER);
+  const o = AC.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(620, t);
+  o.frequency.exponentialRampToValueAtTime(140, t + 0.45);
+  o.connect(bp); o.start(t); o.stop(t + 0.52);
+  setTimeout(() => { if (AC) { sfxSplat(0.9); osc('sine', 130, 48, 0.3, 0.2); } }, 240);
+}
+
+/* ── THE BIG OUTSIDE, part two: romps 5–7 ─────────────────────────────
+   Same bar (memory/sfx-quality-bar.md): layered noise + filter + envelope.
+   No core action in here is a beep — the bee is an amplitude-modulated saw
+   pair, the drone is three detuned saws through a resonant lowpass, and the
+   cucumber SPROING is a pitch-swept triangle with a wooden body thump. */
+function sfxBeeWing() {
+  if (!AC) return;
+  /* one wingbeat cluster: a buzzy saw pair amplitude-modulated at ~30 Hz */
+  const t = T();
+  const bp = AC.createBiquadFilter();
+  bp.type = 'bandpass'; bp.Q.value = 3.4;
+  bp.frequency.setValueAtTime(420, t);
+  bp.frequency.exponentialRampToValueAtTime(300, t + 0.42);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.055, t + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + 0.46);
+  const amp = AC.createGain(); amp.gain.value = 1;
+  const lfo = AC.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 31;
+  const lg = AC.createGain(); lg.gain.value = 0.55;
+  lfo.connect(lg); lg.connect(amp.gain);
+  bp.connect(amp); amp.connect(g); g.connect(MASTER);
+  for (const det of [-11, 10]) {
+    const o = AC.createOscillator();
+    o.type = 'sawtooth'; o.detune.value = det;
+    o.frequency.setValueAtTime(152, t);
+    o.frequency.exponentialRampToValueAtTime(128, t + 0.44);
+    o.connect(bp); o.start(t); o.stop(t + 0.48);
+  }
+  lfo.start(t); lfo.stop(t + 0.48);
+}
+/* the swarm crescendo — a rising stack of buzzes */
+function sfxBeeSwarm(v) {
+  if (!AC) return;
+  const k = v == null ? 1 : v;
+  for (let i = 0; i < 5; i++)
+    setTimeout(() => {
+      if (!AC) return;
+      noise(0.30, 0.045 * k, 'bandpass', 260 + i * 90, 420 + i * 130, 4.0);
+      osc('sawtooth', 120 + i * 26, 160 + i * 34, 0.34, 0.035 * k, null, -9);
+    }, i * 95);
+}
+function sfxHoneyLob() {
+  if (!AC) return;
+  /* a thick wet blop: a low body plus a rising sticky filter sweep */
+  osc('sine', 190, 300, 0.20, 0.10);
+  noise(0.26, 0.055, 'lowpass', 500, 1500, 2.4);
+  osc('triangle', 420, 700, 0.14, 0.045);
+}
+function sfxHoneySplat() {
+  if (!AC) return;
+  noise(0.28, 0.08, 'lowpass', 1300, 220, 1.6);
+  osc('sine', 150, 52, 0.26, 0.09);
+  bell(620, 0.22, 0.03, 1.5);
+}
+/* DELIVERY DRONE 9000: the rotor bed is three DETUNED SAWS through a
+   resonant lowpass with a noise blade layer — a quad-rotor, not a bee. */
+let whirNodes = null;
+function sfxDroneWhirStart() {
+  if (!AC || whirNodes) return;
+  const t = T();
+  const out = AC.createGain(); out.gain.setValueAtTime(0, t);
+  out.gain.linearRampToValueAtTime(0.095, t + 0.9);
+  out.connect(MASTER);
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 5.5;
+  lp.connect(out);
+  const oscs = [];
+  for (const f of [104, 106.4, 209]) {
+    const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+    const g = AC.createGain(); g.gain.value = f > 180 ? 0.11 : 0.26;
+    o.connect(g); g.connect(lp); o.start(t); oscs.push(o);
+  }
+  /* the blade chop: noise amplitude-modulated at the blade-pass frequency */
+  const s = AC.createBufferSource(); s.buffer = NOISE; s.loop = true;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1900; bp.Q.value = 1.1;
+  const amp = AC.createGain(); amp.gain.value = 0.28;
+  const lfo = AC.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 52;
+  const lg = AC.createGain(); lg.gain.value = 0.20;
+  lfo.connect(lg); lg.connect(amp.gain);
+  s.connect(bp); bp.connect(amp); amp.connect(out);
+  s.start(t); lfo.start(t);
+  whirNodes = { out, oscs, s, lfo };
+}
+function sfxDroneWhirStop() {
+  if (!whirNodes || !AC) return;
+  const t = T();
+  whirNodes.out.gain.cancelScheduledValues(t);
+  whirNodes.out.gain.setValueAtTime(whirNodes.out.gain.value, t);
+  whirNodes.out.gain.exponentialRampToValueAtTime(0.0005, t + 0.7);
+  const n = whirNodes; whirNodes = null;
+  setTimeout(() => {
+    try { for (const o of n.oscs) o.stop(); n.s.stop(); n.lfo.stop(); } catch (e) {}
+  }, 1100);
+}
+function sfxDroneRev() {
+  if (!AC) return;
+  osc('sawtooth', 200, 430, 0.85, 0.075, null, -8);
+  osc('sawtooth', 202, 436, 0.85, 0.06, null, 9);
+  noise(0.80, 0.05, 'bandpass', 1400, 2600, 2.0);
+}
+function sfxDroneSwoop() {
+  if (!AC) return;
+  noise(0.55, 0.09, 'bandpass', 2400, 600, 1.2);
+  osc('sawtooth', 430, 180, 0.55, 0.07, null, -7);
+  osc('sine', 120, 70, 0.5, 0.06);
+}
+function sfxDroneLand() {
+  if (!AC) return;
+  osc('sawtooth', 300, 90, 0.75, 0.065, null, -6);
+  noise(0.20, 0.08, 'lowpass', 1000, 260, 1.2);
+  osc('sine', 130, 48, 0.24, 0.10);
+  setTimeout(() => { if (AC) bell(880, 0.30, 0.045, 2.01); }, 220);
+}
+function sfxDroneSputter() {
+  if (!AC) return;
+  for (let i = 0; i < 4; i++)
+    setTimeout(() => {
+      if (!AC) return;
+      osc('sawtooth', 240 - i * 40, 90 - i * 12, 0.16, 0.06, null, -8);
+      noise(0.12, 0.05, 'bandpass', 900 - i * 120, 400, 2.0);
+    }, i * 130);
+}
+function sfxBoxDrop() {
+  if (!AC) return;
+  noise(0.22, 0.05, 'bandpass', 900, 1900, 1.1);
+  osc('triangle', 260, 420, 0.14, 0.040);
+}
+/* packing peanuts: a dry papery scatter, not a beep */
+function sfxPeanuts() {
+  if (!AC) return;
+  noise(0.20, 0.085, 'highpass', 2600, 5400, 0.7);
+  osc('triangle', 300, 150, 0.10, 0.035);
+  for (let i = 0; i < 4; i++)
+    setTimeout(() => { if (AC) noise(0.06, 0.030, 'bandpass', 2200 + Math.random() * 2200, 3000, 1.6); }, 40 + i * 55);
+}
+/* the CUCUMBER SPROING — a pitch-swept triangle over a wooden body thump */
+function sfxSproing(p) {
+  if (!AC) return;
+  p = p || 1;
+  osc('triangle', 150 * p, 900 * p, 0.28, 0.13);
+  osc('sine', 80 * p, 380 * p, 0.30, 0.07);
+  noise(0.14, 0.05, 'bandpass', 700 * p, 2200 * p, 1.8);
+  setTimeout(() => { if (AC) osc('triangle', 780 * p, 380 * p, 0.16, 0.05); }, 150);
+}
+/* the pickle-confetti POP: a burst cluster plus a bright scatter tail */
+function sfxPickleConfetti() {
+  if (!AC) return;
+  duck(1.4);
+  osc('sine', 240, 70, 0.22, 0.20);
+  noise(0.30, 0.12, 'highpass', 1800, 6200, 0.8);
+  for (let i = 0; i < 7; i++)
+    setTimeout(() => {
+      if (!AC) return;
+      noise(0.09, 0.055, 'bandpass', 1400 + Math.random() * 3200, 2600, 2.2);
+      bell(1300 + i * 170, 0.20, 0.045, 2.4);
+    }, 60 + i * 72);
+}
+function sfxDreamChime() {
+  if (!AC) return;
+  const n = [1047, 1319, 1568, 2093];
+  for (let i = 0; i < n.length; i++)
+    setTimeout(() => { if (AC) bell(n[i], 0.7, 0.045, 3.01); }, i * 110);
+  noise(0.6, 0.02, 'highpass', 4200, 7000, 0.6);
+}
+/* he is a cucumber and he is unimpressed with you */
+function sfxKingScoff() {
+  if (!AC) return;
+  osc('sawtooth', 130, 92, 0.34, 0.055, null, -9);
+  osc('sawtooth', 131, 94, 0.34, 0.045, null, 8);
+  noise(0.26, 0.04, 'lowpass', 700, 300, 2.4);
+}
+
 /* ── bosses / flow ─────────────────────────────────────────────────── */
 function sfxBossIntro() {
   if (!AC) return;
@@ -460,18 +732,110 @@ const AMB = {
   house: { root: 130.81, chord: [[0, 7, 12], [3, 10, 15], [5, 12, 17], [3, 10, 14]], type: 'triangle', lp: 900, g: 0.055 },
   yard: { root: 146.83, chord: [[0, 7, 16], [2, 9, 14], [-3, 4, 12], [0, 7, 11]], type: 'triangle', lp: 1100, g: 0.05 },
   night: { root: 110.00, chord: [[0, 3, 10], [-2, 5, 8], [-4, 3, 7], [-5, 2, 10]], type: 'sine', lp: 700, g: 0.06 },
+  /* squeaky-clean supermarket muzak-lite: a major-7 shuffle, bright and a
+     little too pleased with itself (LEVELS2 §C) */
+  market: { root: 164.81, chord: [[0, 4, 11], [2, 7, 9], [-3, 4, 7], [0, 5, 9]], type: 'triangle', lp: 1500, g: 0.045 },
+  /* romp 5 — a humid major-9 drift under the jungle hum */
+  green: { root: 146.83, chord: [[0, 7, 14], [-2, 5, 12], [3, 10, 15], [0, 4, 11]], type: 'triangle', lp: 1000, g: 0.05 },
+  /* romp 6 — bright open fifths, a city afternoon */
+  sky: { root: 174.61, chord: [[0, 7, 12], [2, 9, 14], [5, 12, 16], [0, 7, 11]], type: 'triangle', lp: 1700, g: 0.045 },
+  /* romp 7 — a slow lydian float, the dream */
+  dream: { root: 130.81, chord: [[0, 6, 11], [-1, 4, 9], [2, 7, 14], [-3, 6, 10]], type: 'sine', lp: 800, g: 0.055 },
 };
+
+/* ── the per-level AMBIENT BED (LEVELS2 §C) ────────────────────────────
+   The chord loop above is the "music"; this is the ROOM.  One sustained
+   layer per theme, all layered synthesis, ducked with the chords under every
+   fanfare because it hangs off the same ambGain:
+     green — a warm jungle hum plus an LFO'd saw SWARM (the bees)
+     sky   — open city-day wind (two filtered noise beds at different rates)
+     dream — a shimmer: slow detuned sines through a swept lowpass         */
+let bedNodes = null;
+function ambBedStop() {
+  if (!bedNodes || !AC) return;
+  const t = T();
+  bedNodes.out.gain.cancelScheduledValues(t);
+  bedNodes.out.gain.setValueAtTime(bedNodes.out.gain.value, t);
+  bedNodes.out.gain.exponentialRampToValueAtTime(0.0004, t + 0.6);
+  const n = bedNodes; bedNodes = null;
+  setTimeout(() => { for (const s of n.stop) { try { s.stop(); } catch (e) {} } }, 1000);
+}
+function ambBedStart(theme) {
+  if (!AC) return;
+  ambBedStop();
+  if (theme !== 'green' && theme !== 'sky' && theme !== 'dream') return;
+  const t = T();
+  const out = AC.createGain();
+  out.gain.setValueAtTime(0, t);
+  out.gain.linearRampToValueAtTime(theme === 'sky' ? 0.09 : 0.075, t + 1.6);
+  out.connect(ambGain);
+  const stop = [];
+  if (theme === 'green') {
+    /* the hum: a low filtered noise bed */
+    const s = AC.createBufferSource(); s.buffer = NOISE; s.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 340; lp.Q.value = 2.2;
+    const g = AC.createGain(); g.gain.value = 0.55;
+    s.connect(lp); lp.connect(g); g.connect(out);
+    s.start(t); stop.push(s);
+    /* the SWARM: two detuned saws through a bandpass, amplitude-LFO'd slowly
+       so it breathes in and out like bees moving across the house */
+    const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 380; bp.Q.value = 5.0;
+    const amp = AC.createGain(); amp.gain.value = 0.11;
+    const lfo = AC.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.19;
+    const lg = AC.createGain(); lg.gain.value = 0.085;
+    lfo.connect(lg); lg.connect(amp.gain);
+    for (const f of [116, 118.4, 174]) {
+      const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      const og = AC.createGain(); og.gain.value = f > 150 ? 0.22 : 0.5;
+      o.connect(og); og.connect(bp); o.start(t); stop.push(o);
+    }
+    bp.connect(amp); amp.connect(out);
+    lfo.start(t); stop.push(lfo);
+  } else if (theme === 'sky') {
+    for (const [f, q, rate, gain] of [[520, 0.8, 0.13, 0.40], [1450, 0.6, 0.21, 0.22]]) {
+      const s = AC.createBufferSource(); s.buffer = NOISE; s.loop = true;
+      const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+      const amp = AC.createGain(); amp.gain.value = gain;
+      const lfo = AC.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = rate;
+      const lg = AC.createGain(); lg.gain.value = gain * 0.6;
+      lfo.connect(lg); lg.connect(amp.gain);
+      const fl = AC.createOscillator(); fl.type = 'sine'; fl.frequency.value = rate * 0.7;
+      const fg = AC.createGain(); fg.gain.value = f * 0.35;
+      fl.connect(fg); fg.connect(bp.frequency);
+      s.connect(bp); bp.connect(amp); amp.connect(out);
+      s.start(t); lfo.start(t); fl.start(t);
+      stop.push(s, lfo, fl);
+    }
+  } else {
+    /* the dream shimmer: three barely-detuned sines swept by a slow lowpass */
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 3.0;
+    const fl = AC.createOscillator(); fl.type = 'sine'; fl.frequency.value = 0.08;
+    const fg = AC.createGain(); fg.gain.value = 520;
+    fl.connect(fg); fg.connect(lp.frequency);
+    for (const f of [261.6, 263.1, 392.0, 523.3]) {
+      const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = AC.createGain(); g.gain.value = 0.16;
+      o.connect(g); g.connect(lp); o.start(t); stop.push(o);
+    }
+    lp.connect(out);
+    fl.start(t); stop.push(fl);
+  }
+  bedNodes = { out, stop };
+}
+
 function ambStart() {
   if (!audioInit()) return;
   ambOn = true;
   ambNext = T() + 0.05;
   ambBar = 0;
   ambGain.gain.setTargetAtTime(1, T(), 0.8);
+  ambBedStart(WORLD.theme);
 }
 function ambStop() {
   if (!AC) return;
   ambOn = false;
   ambGain.gain.setTargetAtTime(0, T(), 0.4);
+  ambBedStop();
 }
 function duck(sec) { duckT = Math.max(duckT, sec); }
 function audioTick(dt) {

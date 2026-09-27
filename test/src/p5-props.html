@@ -19,17 +19,38 @@ const WORLD = {
   bands: [], solids: [], bins: [], movers: [], glows: [], corridor: [],
   ceil: [], checkpoints: [], length: 0, far: null, theme: 'house', pal: null,
   bakeMs: 0, tris: 0,
+  /* THE BIG OUTSIDE additions.  Every one of these lists is EMPTY for romps
+     1–3, and every sim hook that reads them early-outs on an empty list —
+     that is what keeps the old levels bit-identical. */
+  vents: [],        // updraft columns:   {x, z, r, power, y0, h}
+  zips: [],         // ziplines:          {x0,z0,y0, x1,z1,y1, len, g}
+  slick: [],        // low-friction floor: {x0,x1,z0,z1, k, cold, on, g}
+  says: [],         // PA gags:           {z, main, sub, said}
+  props: [],        // dynamic prop meshes to dispose on level clear
+  gravK: 1,         // per-level jump gravity scale (LAW: a sim constant)
+  /* THE CUCUMBER KING's launch ranks (romp 7).  The LEVEL owns the pad
+     geometry; the boss only plants cucumbers on it, so the two can never
+     disagree about where the steps are. */
+  kingPads: null,
 };
 
 function clearWorld() {
   for (const b of WORLD.bands) { scene.remove(b.mesh); b.mesh.geometry.dispose(); }
   if (WORLD.far) { scene.remove(WORLD.far); WORLD.far.geometry.dispose(); }
-  for (const m of WORLD.movers) if (m.g) { scene.remove(m.g); m.g.geometry.dispose(); }
+  /* disposeTree, not .geometry.dispose(): a mover's mesh may be a GROUP now
+     (romp 7's yarn planets roll a child inside a positioned parent) and
+     `group.geometry` is undefined — which threw on the next level change. */
+  for (const m of WORLD.movers) if (m.g) { scene.remove(m.g); disposeTree(m.g); }
   for (const c of WORLD.solids) if (c.g) { scene.remove(c.g); c.g.geometry.dispose(); }
   for (const c of WORLD.checkpoints) if (c.g) { scene.remove(c.g); disposeTree(c.g); }
   WORLD.bands.length = 0; WORLD.solids.length = 0; WORLD.bins.length = 0;
   WORLD.movers.length = 0; WORLD.glows.length = 0; WORLD.corridor.length = 0;
   WORLD.checkpoints.length = 0; WORLD.ceil.length = 0;
+  for (const o of WORLD.props) { scene.remove(o); disposeTree(o); }
+  WORLD.props.length = 0;
+  WORLD.vents.length = 0; WORLD.zips.length = 0;
+  WORLD.slick.length = 0; WORLD.says.length = 0;
+  WORLD.gravK = 1; WORLD.kingPads = null;
   WORLD.far = null; WORLD.length = 0; WORLD.tris = 0;
   CRATES.length = 0;
 }
@@ -161,7 +182,7 @@ function propCrate(x, y, z, s, P) {
     vcBox(s + 0.012, e, t, P.crateD),
     vcBox(e, s + 0.012, t, P.crateD),
   ]);
-  m.position.set(x, y + s / 2, z);
+  twFace(m, x, y + s / 2, z, 0);
   if (LOOK && FX.shadow) m.castShadow = true;
   scene.add(m);
   const sol = { x0: x - s / 2, x1: x + s / 2, y0: y, y1: y + s, z0: z - s / 2, z1: z + s / 2,
@@ -491,6 +512,539 @@ function buildSkyline(pal, z0, z1) {
       Math.cos(a) * r, 13, cz + Math.sin(a) * r, pal.glowBand);
   }
 }
+/* ═══════════════════════ MARKET props (romp 4) ══════════════════════
+   THE BIG OUTSIDE, LEVELS2 §B.  Two shelf tiers you can platform on, open
+   freezer cases, checkout conveyors, gag PA signage.  Everything here is
+   authored in TRACK space like every other prop — pushTri maps it through
+   trackToWorld on the way into the band mesh, so a shelf run inside a
+   corner simply bends with the aisle.
+   LAW learned in the shot review: a box resting on a shelf must be LIFTED
+   off the surface (+0.02) and inset, or the two coplanar faces z-fight. */
+
+/* a supermarket shelving run along the corridor: kick plate, TWO walkable
+   tiers, a back panel, and rows of colourful boxes.  The walking surfaces
+   are ONE long solid each (not one per box) so the collision bins stay
+   cheap — the back-row boxes get a single slab of their own. */
+function propShelfUnit(x, z, len, P) {
+  const side = x < 0 ? -1 : 1;              // which way the back panel faces
+  const D = 1.5, T1 = 1.12, T2 = 2.32, hz = len / 2;
+  const cols = [P.bx1, P.bx2, P.bx3, P.bx4, P.bx5, P.bx6];
+  B(x, 0.12, z, D, 0.24, len, P.shelfD);                     // kick plate
+  B(x, T1 - 0.06, z, D, 0.12, len, P.shelfM);                // tier 1 deck
+  B(x, T2 - 0.06, z, D, 0.12, len, P.shelfM);                // tier 2 deck
+  G(x + side * (D / 2 + 0.06), 1.35, z, 0.12, 2.70, len, P.shelfD);   // back
+  S(x + side * (D / 2 + 0.06), 1.35, z, 0.14, 2.70, len, 'solid');
+  for (let zz = z - hz; zz <= z + hz + 0.01; zz += 2.4) {
+    G(x, 1.30, zz, D - 0.04, 2.60, 0.10, P.shelfM);          // uprights
+  }
+  /* the price rail — the stripe that makes it read as a SHOP shelf */
+  for (const ty of [T1, T2]) G(x - side * (D / 2 - 0.02), ty + 0.06, z, 0.05, 0.10, len - 0.1, P.signB);
+  /* goods: a row under tier 1, and a back row ON tier 1 (front lane stays
+     clear so the tier is still a runway) */
+  let i = 0;
+  for (let zz = z - hz + 0.34; zz < z + hz - 0.2; zz += 0.66, i++) {
+    const c1 = cols[(i * 3 + 1) % 6], c2 = cols[(i * 5 + 4) % 6];
+    const w = 0.40 + (i % 3) * 0.05, h = 0.46 + (i % 4) * 0.07;
+    G(x - side * 0.22, 0.24 + h / 2 + 0.02, zz, w, h, 0.48, c1);
+    if (i % 4 !== 3) {
+      const h2 = 0.40 + (i % 3) * 0.09;
+      G(x + side * 0.40, T1 + h2 / 2 + 0.02, zz, 0.40, h2, 0.44, c2);
+    }
+  }
+  S(x + side * 0.40, T1 + 0.32, z, 0.46, 0.64, len, 'solid');  // back-row slab
+}
+/* an aisle end-cap: a pallet with a stack of (breakable-looking) cartons */
+function propEndCap(x, z, P) {
+  const cols = [P.bx1, P.bx3, P.bx4, P.bx2];
+  B(x, 0.07, z, 2.0, 0.14, 1.5, P.wood);
+  for (let r = 0; r < 3; r++) {
+    const n = 3 - r;
+    for (let i = 0; i < n; i++) {
+      const xx = x - (n - 1) * 0.31 + i * 0.62;
+      G(xx, 0.14 + 0.31 + r * 0.60, z, 0.58, 0.58, 1.2, cols[(r + i) % 4]);
+    }
+  }
+  S(x, 0.14 + 0.92, z, 1.9, 1.84, 1.25, 'solid');
+}
+/* an OPEN freezer case: chest walls, a pale icy inside (emissive), and a
+   cold glow.  The rim is walkable, so a case is also a ledge. */
+function propFreezer(x, z, len, P) {
+  B(x, 0.42, z, 2.0, 0.84, len, P.metalD);
+  B(x, 0.90, z, 2.1, 0.12, len + 0.06, P.metal);              // walkable rim
+  GE(x, 0.86, z, 1.6, 0.03, len - 0.5, P.ice);                // the ice inside
+  for (let zz = z - len / 2 + 0.7; zz < z + len / 2; zz += 1.4)
+    G(x, 0.94, zz, 1.5, 0.08, 0.5, P.iceD);                   // frosted packs
+  G(x, 0.52, z, 2.12, 0.16, len + 0.08, P.signB);             // price band
+  GLOW(x, 1.35, z, 3.0, P.iceGlow, 0.35);
+}
+/* checkout: a register block, a belt cradle and a candy rack */
+function propRegister(x, z, P) {
+  B(x, 0.50, z, 1.8, 1.00, 1.4, P.counterD);
+  G(x, 1.04, z, 1.9, 0.10, 1.5, P.counter);
+  S(x, 1.04, z, 1.9, 0.10, 1.5, 'solid');
+  G(x, 1.42, z - 0.2, 0.52, 0.66, 0.34, P.metalD);            // the till
+  GE(x, 1.46, z - 0.38, 0.40, 0.28, 0.04, P.signA);           // its lit display
+  for (let i = 0; i < 4; i++)                                 // candy rack
+    G(x + (x < 0 ? 1.1 : -1.1), 0.30 + i * 0.26, z + 0.5, 0.36, 0.20, 0.5,
+      [P.bx5, P.bx3, P.bx1, P.bx6][i]);
+}
+/* the cradle a conveyor `mover` slides inside: rails + rollers, static */
+function propConvRig(x, z, len, w, P) {
+  /* the rails are DECO ONLY — give them a solid and the cat just walks the
+     rail over the gap, and the conveyor ride stops being the answer */
+  for (const s of [-1, 1]) G(x + s * (w / 2 + 0.16), 0.52, z, 0.22, 0.44, len, P.metalD);
+  /* rollers are BARS ACROSS the belt.  (CYL builds about +Y — passing the
+     belt width as its height stood a 3 m black post in the middle of the
+     checkout, which is exactly what the first screenshot showed.)
+     And the rig NEVER spans the gap: a dark slab bridging the hole makes a
+     hole read as a floor, which is the one thing a platformer may not do. */
+  for (let zz = z - len / 2 + 0.5; zz < z + len / 2; zz += 1.0)
+    G(x, 0.26, zz, w + 0.20, 0.13, 0.13, P.metalD);
+  G(x, 0.12, z, w, 0.20, len, P.beltD);
+}
+function propCart(x, z, ry, P) {
+  G(x, 0.44, z, 0.72, 0.52, 1.00, P.metal, ry);
+  G(x, 0.20, z, 0.60, 0.06, 0.86, P.metalD, ry);
+  G(x, 0.74, z - 0.46, 0.66, 0.12, 0.08, P.signB, ry);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1])
+    G(x + sx * 0.28, 0.07, z + sz * 0.42, 0.10, 0.14, 0.10, P.metalD, ry);
+  S(x, 0.42, z, 0.8, 0.84, 1.05, 'solid');
+}
+/* aisle signage — the PA gag boards ("CLEAN-UP, AISLE CAT").
+   LAW learned in the shot review: a board hung over the CENTRE of an aisle
+   sits exactly where the camera boom lives (cat.y + 2.55) and swipes across
+   the lens every time.  So a sign out at the corridor edge mounts FLAT ON
+   THE WALL, and only the tall rooms get a hanging one. */
+function propSignHang(x, y, z, w, h, hex, P) {
+  if (Math.abs(x) > 3.5) {
+    const s = x < 0 ? 1 : -1;               // inward
+    G(x, y, z, 0.14, h + 0.22, w + 0.22, P.shelfD);
+    G(x + s * 0.09, y, z, 0.05, h, w, hex);
+    G(x + s * 0.12, y, z, 0.03, h - 0.22, w - 0.26, P.trim);
+    for (let i = 0; i < 4; i++)
+      G(x + s * 0.15, y + 0.02, z - w / 2 + 0.34 + i * (w - 0.68) / 3,
+        0.02, 0.11, (w - 0.9) / 4.6, P.signB);
+    return;
+  }
+  G(x + w * 0.3, y + h / 2 + 0.34, z, 0.06, 0.68, 0.06, P.metalD);
+  G(x - w * 0.3, y + h / 2 + 0.34, z, 0.06, 0.68, 0.06, P.metalD);
+  G(x, y, z, w, h, 0.10, hex);
+  G(x, y, z - 0.07, w - 0.22, h - 0.20, 0.03, P.trim);
+  for (let i = 0; i < 4; i++)
+    G(x - w / 2 + 0.36 + i * (w - 0.72) / 3, y + 0.02, z - 0.11, (w - 0.9) / 4.6, 0.11, 0.02, P.signB);
+}
+function propSpeaker(x, y, z, P) {
+  G(x, y, z, 0.40, 0.44, 0.30, P.shelfD);
+  CYL(x, y, z - 0.18, 0.13, 0.17, 0.08, 8, P.metalD);
+}
+/* the floor grate an updraft rises out of (the vent VERB lives in the sim) */
+/* `y` is the FLOOR the grate sits on — romps 5/6 put updrafts on elevated
+   tiers, and a grate hard-coded to y=0 draws itself at the bottom of the
+   world while the column it belongs to lifts you off a shelf 6 m up. */
+function propGrate(x, z, r, P, y) {
+  const b = y || 0;
+  FLOORQ(x - r, z - r, x + r, z + r, b + 0.018, P.metalD);
+  for (let i = -3; i <= 3; i++)
+    G(x + i * r * 0.28, b + 0.05, z, r * 0.14, 0.06, r * 1.8, P.metal);
+  G(x, b + 0.04, z, r * 2.1, 0.08, r * 2.1, P.shelfD);
+  GLOW(x, b + 0.9, z, 2.2, P.iceGlow, 0.8);
+}
+/* the price-check pulley line: the ZIP verb's art, the L3 clothesline
+   language reused (LEVELS2 §A) */
+function propZipline(x0, z0, y0, x1, z1, y1, P) {
+  const md = bandMD((z0 + z1) / 2);
+  const steps = 14;
+  for (let i = 0; i < steps; i++) {
+    const t0 = i / steps, t1 = (i + 1) / steps;
+    const a = [lerp(x0, x1, t0), lerp(y0, y1, t0), lerp(z0, z1, t0)];
+    const b = [lerp(x0, x1, t1), lerp(y0, y1, t1), lerp(z0, z1, t1)];
+    boxMD(md, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2,
+      Math.hypot(b[0] - a[0], b[2] - a[2]) + 0.05, 0.06, 0.06,
+      rgb(P.rope), Math.atan2(b[0] - a[0], b[2] - a[2]) + Math.PI / 2);
+  }
+  /* the masts are DECO, never solids: the cat is auto-released AT the far
+     endpoint, and a solid there ejects him sideways off the landing ledge */
+  for (const e of [[x0, y0, z0], [x1, y1, z1]]) {
+    CYL(e[0], e[1] * 0.5, e[2], 0.09, 0.13, e[1], 6, P.metalD);
+    G(e[0], e[1] + 0.10, e[2], 0.44, 0.12, 0.44, P.metal);
+  }
+}
+/* the market's front doors — the level opens by walking through them */
+function propDoors(x, z, P) {
+  for (const sg of [-1, 1]) {
+    G(x + sg * 3.7, 1.60, z, 2.6, 3.20, 0.30, P.wallLow);
+    S(x + sg * 3.7, 1.60, z, 2.6, 3.20, 0.30, 'solid');
+    G(x + sg * 2.42, 1.60, z, 0.18, 3.20, 0.40, P.metal);
+    GE(x + sg * 3.7, 1.90, z - 0.16, 2.2, 1.9, 0.04, P.signA);
+  }
+  G(x, 3.34, z, 9.6, 0.30, 0.42, P.shelfD);
+  G(x, 3.30, z, 5.2, 0.16, 0.48, P.signB);
+}
+/* a WET FLOOR cone — deco along the arena, and SIR MOPSALOT's hat */
+function buildCone(P) {
+  return vcMesh([
+    vcBox(0.46, 0.05, 0.46, P.coneD).translate(0, 0.025, 0),
+    vcCone(0.20, 0.62, 4, P.cone).translate(0, 0.35, 0),
+    vcBox(0.30, 0.09, 0.02, P.coneD).translate(0, 0.30, 0.13),
+  ]);
+}
+function propCone(x, z, ry, P) {
+  const m = buildCone(P);
+  twFace(m, x, 0, z, ry || 0);
+  scene.add(m);
+  WORLD.props.push(m);
+}
+/* a mopped slick (the freezer's frost sheen and the boss's puddles): one
+   flat translucent quad, no depth write, so it never z-fights the floor */
+function makePuddle(w, d, hex) {
+  const g = new THREE.PlaneGeometry(w, d);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    color: hex, transparent: true, opacity: 0.34, depthWrite: false,
+  }));
+  /* YXZ so the route heading (rotation.y) is applied BEFORE the lie-flat
+     tilt — with the default XYZ order a yaw would spin the quad on edge */
+  m.rotation.order = 'YXZ';
+  m.rotation.x = -Math.PI / 2;
+  m.renderOrder = 3;
+  scene.add(m);
+  WORLD.props.push(m);
+  return m;
+}
+
+/* ═══════════ GREENHOUSE props (romp 5) ══════════════════════════════════
+   LEVELS2 §B.  The vertical one: leaf trampolines, terracotta pot stacks you
+   climb, slatted staging benches you run along, ferns and palms for the
+   jungle, and hanging vines.  All authored in TRACK space like everything
+   else — pushTri bends them round the two switchback corners for free. */
+
+/* a GIANT LEAF — the trampoline of this level.  Flattened dome + a mid-rib
+   so it reads as a leaf and not as a green plate, and a `tramp` solid. */
+function propLeafTramp(x, y, z, r, P) {
+  const md = bandMD(z);
+  domeMD(md, x, y - 0.06, z, r, r * 0.30, 9, 2, rgb(P.leafBig));
+  domeMD(md, x, y - 0.14, z, r * 0.72, r * 0.16, 8, 1, rgb(P.leafBigD));
+  G(x, y + 0.04, z, r * 0.10, 0.05, r * 1.7, P.leafBigD);          // mid rib
+  for (let i = 0; i < 5; i++) {
+    const a = (i - 2) * 0.38;
+    G(x, y + 0.02, z, r * 1.5, 0.04, r * 0.06, P.leafBigD, a);     // side veins
+  }
+  /* the stem reaches down toward the floor so it is obviously a PLANT and not
+     a floating disc (deco only — the solid is the leaf) */
+  CYL(x - r * 0.9, y - 0.5, z, 0.07, 0.10, 1.0, 6, P.stem);
+  S(x, y - 0.14, z, r * 1.7, 0.34, r * 1.7, 'tramp');
+}
+/* A LEANING stack of terracotta pots — and it leans for a REASON.  Stacked
+   dead vertical it is not climbable at all: each pot's rim (and the lid, which
+   is wider than the pot under it) overhangs the ledge below, so a cat standing
+   on pot 2 bonks his head on the lid on the way up and drops straight back.
+   Offsetting each pot along the route turns the stack into a THREE-STEP
+   STAIRCASE with nothing overhead — which is what it always looked like it
+   was, and now is.  (Found by the bot, romp 5.) */
+function propPotStack(x, z, n, P) {
+  let y = 0, zz = z;
+  for (let i = 0; i < n; i++) {
+    const rr = 0.46 - i * 0.05, h = 0.54;
+    zz = z + i * 0.40;
+    CYL(x, y + h / 2, zz, rr, rr * 0.78, h, 9, P.terra);
+    CYL(x, y + h - 0.03, zz, rr + 0.05, rr + 0.05, 0.08, 9, P.terraD);
+    S(x, y + h / 2, zz, rr * 1.9, h, rr * 1.9, 'solid');
+    y += h;
+  }
+  /* a flat lid on top so the stack is a LEDGE, not a dome you slide off — and
+     no wider than the pot it sits on, or it becomes a low ceiling */
+  B(x, y + 0.04, zz, 0.66, 0.10, 0.66, P.terraD);
+  return y + 0.09;
+}
+/* a slatted greenhouse staging bench — a walkable runway at `y` */
+function propStage(x, z, len, w, y, P) {
+  B(x, y - 0.05, z, w, 0.10, len, P.bench);
+  for (let zz = z - len / 2 + 0.3; zz < z + len / 2; zz += 0.42)
+    G(x, y + 0.02, zz, w - 0.06, 0.04, 0.22, P.benchD);
+  for (let zz = z - len / 2 + 0.8; zz < z + len / 2; zz += 2.6) {
+    for (const sx of [-1, 1]) {
+      G(x + sx * (w / 2 - 0.16), (y - 0.1) / 2, zz, 0.12, y - 0.1, 0.12, P.benchD);
+      S(x + sx * (w / 2 - 0.16), (y - 0.1) / 2, zz, 0.14, y - 0.1, 0.14, 'solid');
+    }
+  }
+  G(x, y + 0.10, z, w + 0.10, 0.10, 0.10, P.benchD);
+}
+function propFern(x, z, s, P) {
+  CYL(x, 0.12, z, 0.16, 0.20, 0.24, 7, P.terra);
+  for (let i = 0; i < 9; i++) {
+    const a = i / 9 * TAU, lift = 0.5 + (i % 3) * 0.18;
+    G(x + Math.cos(a) * s * 0.42, 0.24 + lift * s * 0.5, z + Math.sin(a) * s * 0.42,
+      s * 0.16, s * lift, s * 0.9, i % 2 ? P.leaf : P.leafD, a);
+  }
+  S(x, s * 0.4, z, s * 1.2, s * 0.8, s * 1.2, 'solid');
+}
+function propPalm(x, z, h, P) {
+  for (let i = 0; i < 5; i++)
+    CYL(x + Math.sin(i * 0.7) * 0.10, h * 0.11 + i * h * 0.17, z, 0.15, 0.20, h * 0.19, 7, P.bark);
+  for (let i = 0; i < 7; i++) {
+    const a = i / 7 * TAU;
+    G(x + Math.cos(a) * h * 0.30, h * 0.93 - (i % 2) * 0.18, z + Math.sin(a) * h * 0.30,
+      h * 0.18, 0.10, h * 0.66, i % 2 ? P.leafBig : P.leafBigD, a);
+  }
+  DOME(x, h * 0.95, z, h * 0.12, h * 0.10, 7, 2, rgb(P.leafBigD));
+  S(x, h * 0.45, z, 0.54, h * 0.9, 0.54, 'solid');
+}
+/* hanging vines — pure deco, and the thing that makes a tall glass room read
+   as a JUNGLE instead of as a corridor with a high ceiling */
+function propVine(x, y, z, h, P) {
+  const md = bandMD(z);
+  const n = Math.max(3, Math.round(h / 0.6));
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    const sw = Math.sin(t * 5.2) * 0.22;
+    boxMD(md, x + sw, y - t * h - 0.3, z + Math.cos(t * 4.1) * 0.14, 0.07, 0.62, 0.07, rgb(P.vine));
+    if (i % 2 === 0)
+      boxMD(md, x + sw + 0.16, y - t * h - 0.3, z + Math.cos(t * 4.1) * 0.14, 0.30, 0.06, 0.22,
+        rgb(i % 4 ? P.leaf : P.leafD), t * 3);
+  }
+}
+/* the flower bed the QUEEN BEE holds court over */
+function propFlowerBed(x, z, len, w, P) {
+  B(x, 0.16, z, w, 0.32, len, P.soil);
+  G(x, 0.36, z, w + 0.14, 0.12, len + 0.14, P.terraD);
+  S(x, 0.36, z, w + 0.14, 0.12, len + 0.14, 'solid');
+  const fc = [P.flower1, P.flower2, P.flower3];
+  let i = 0;
+  for (let zz = z - len / 2 + 0.6; zz < z + len / 2; zz += 1.1, i++) {
+    for (const sx of [-0.30, 0.30]) {
+      const xx = x + sx * w;
+      CYL(xx, 0.62, zz, 0.05, 0.06, 0.44, 5, P.stem);
+      const c = fc[(i + (sx > 0 ? 1 : 0)) % 3];
+      for (let k = 0; k < 5; k++) {
+        const a = k / 5 * TAU;
+        G(xx + Math.cos(a) * 0.17, 0.86, zz + Math.sin(a) * 0.17, 0.20, 0.06, 0.13, c, a);
+      }
+      CYL(xx, 0.88, zz, 0.09, 0.09, 0.07, 6, P.signA);
+      GLOW(xx, 0.95, zz, 0.9, c, 0.5);
+    }
+  }
+}
+/* a glass pane panel — the greenhouse wall style's building block */
+function propGlassPanel(x, y, z, w, h, sideAxis, P) {
+  if (sideAxis) {
+    G(x, y, z, 0.16, h, w, P.glassFrame);
+    GE(x, y, z, 0.05, h - 0.26, w - 0.26, P.glass);
+  } else {
+    G(x, y, z, w, h, 0.16, P.glassFrame);
+    GE(x, y, z - 0.06, w - 0.26, h - 0.26, 0.05, P.glass);
+  }
+}
+
+/* ═══════════ SKYLINE-DAY props (romp 6) ═════════════════════════════════
+   The same rooftop vocabulary as romp 3 (parapets, AC units, chimneys,
+   antennas, awnings, the water tower) in a DAY palette, plus the four things
+   the Spider-Man level needs of its own: a skyscraper to bend around, tower
+   cranes, window-washer rigs and kites. */
+
+/* a whole skyscraper, SOLID: this is what the CORNER bends around, so it is
+   the one prop in the game that is a building rather than a piece of one */
+function propTowerBlock(x, z, w, d, h, P) {
+  B(x, h / 2, z, w, h, d, P.concA);
+  G(x, h + 0.30, z, w + 0.5, 0.60, d + 0.5, P.concB);            // the cap
+  G(x, h + 0.80, z, w * 0.36, 0.44, d * 0.36, P.metalD);
+  /* glass bands: horizontal ribbons on BOTH faces that meet at the corner, so
+     whichever side of the bend you are on it reads as a tower */
+  for (let yy = 2.2; yy < h - 1.2; yy += 3.1) {
+    for (const sg of [-1, 1]) {
+      G(x + sg * (w / 2 + 0.05), yy, z, 0.12, 1.5, d - 1.0, P.glassD);
+      G(x, yy, z + sg * (d / 2 + 0.05), w - 1.0, 1.5, 0.12, P.glassD);
+      G(x + sg * (w / 2 + 0.10), yy + 0.92, z, 0.10, 0.22, d - 1.0, P.goldTrim);
+    }
+  }
+}
+/* a tower crane: mast, jib, counter-jib, hook.  The PLATFORM the cat rides is
+   a `mover` in the level data; this is the machine it hangs from. */
+function propCrane(x, z, h, P) {
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    G(x + sx * 0.52, h / 2, z + sz * 0.52, 0.16, h, 0.16, P.craneA);
+  }
+  for (let yy = 1.6; yy < h; yy += 1.6) {
+    G(x, yy, z, 1.24, 0.12, 0.12, P.craneD);
+    G(x, yy, z, 0.12, 0.12, 1.24, P.craneD);
+  }
+  S(x, h / 2, z, 1.3, h, 1.3, 'solid');
+  /* the jib reaches OUT over the corridor (deco — nothing to stand on up there) */
+  const jx = x < 0 ? 1 : -1;
+  for (let i = 0; i < 9; i++) {
+    G(x + jx * (1.2 + i * 1.5), h + 0.7, z, 1.5, 0.14, 0.14, P.craneA);
+    G(x + jx * (1.2 + i * 1.5), h + 1.3, z, 1.5, 0.12, 0.12, P.craneD);
+    G(x + jx * (1.2 + i * 1.5), h + 1.0, z, 0.10, 0.70, 0.10, P.craneD);
+  }
+  G(x - jx * 1.8, h + 0.9, z, 2.4, 0.9, 1.0, P.craneD);           // counterweight
+  G(x + jx * 6.0, h - 1.4, z, 0.07, 3.0, 0.07, P.metalD);         // the cable
+  G(x + jx * 6.0, h - 3.1, z, 0.44, 0.40, 0.44, P.metalD);        // the hook block
+  GE(x, h + 1.9, z, 0.18, 0.18, 0.18, 0xff5a4a);
+  GLOW(x, h + 1.95, z, 1.0, 0xff5a4a, 1.5);
+}
+/* the davit + cables a window-washer platform hangs from (the platform itself
+   is a vertical `mover`).  Deco only: a solid here would block the ride. */
+function propWasherRig(x, y, z, w, P) {
+  for (const sx of [-1, 1]) G(x + sx * (w / 2 - 0.2), y + 3.2, z, 0.07, 6.4, 0.07, P.metalD);
+  G(x, y + 6.5, z, w + 0.6, 0.18, 0.5, P.metalD);
+  G(x, y + 6.2, z - 0.3, 0.4, 0.5, 0.4, P.craneD);
+  G(x, y + 0.3, z, w, 0.10, 0.12, P.signA);
+}
+/* a kite — high, bright, and the thing that sells "daytime" in one glance */
+function propKite(x, y, z, hex, P) {
+  const md = bandMD(z);
+  const a = 0.5, c = rgb(hex), c2 = rgb(P.panel);
+  /* two triangles make the diamond, wound so both are front-facing */
+  pushTriRaw(md, x, y + 1.1, z, x - 0.8, y, z + 0.2, x + 0.8, y, z - 0.2, c);
+  pushTriRaw(md, x, y - 1.3, z, x - 0.8, y, z + 0.2, x + 0.8, y, z - 0.2, c2);
+  for (let i = 0; i < 6; i++)
+    boxMD(md, x + Math.sin(i * 1.1) * 0.5, y - 1.6 - i * 0.7, z + Math.cos(i * 0.8) * 0.4,
+      0.22, 0.30, 0.05, i % 2 ? c : c2, i * 0.6, true);
+  void a;
+}
+
+/* ═══════════ DREAM props (romp 7) ═══════════════════════════════════════
+   Cotton-candy pastels over the indigo void.  The floating islands ARE floor
+   ops (one emitter per surface — house law); these add the soft underside,
+   the tufts and the clouds that make them read as CUSHIONS. */
+function propCushionIsle(x, z, w, d, y, P) {
+  /* The plump underside.  A dome with a NEGATIVE height would be wound
+     inside-out (and backface-culled into nothing), so the hanging belly is a
+     tapered CYL instead — wide at the slab, narrow underneath. */
+  const r = Math.min(w, d) * 0.48;
+  CYL(x, y - 0.42, z, r, r * 0.34, 0.84, 11, P.cush2);
+  for (const sg of [-1, 1]) {
+    G(x + sg * (w / 2 - 0.1), y - 0.16, z, 0.36, 0.36, d - 0.4, P.cush1);
+    G(x, y - 0.16, z + sg * (d / 2 - 0.1), w - 0.4, 0.36, 0.36, P.cush1);
+  }
+  /* tuft buttons on top — flat, so they are never a trip hazard */
+  for (let i = -1; i <= 1; i++) for (let k = -1; k <= 1; k++) {
+    if (!i && !k) continue;
+    CYL(x + i * w * 0.28, y + 0.03, z + k * d * 0.28, 0.16, 0.16, 0.06, 7, P.cush3);
+  }
+}
+/* a giant ball of yarn — romp 7's rolling mover.  Returns a MESH (the mover
+   machinery spins it), not baked geometry. */
+function mkYarnBall(r, P) {
+  const parts = [vcSph(r, 12, 9, P.yarn1)];
+  for (let i = 0; i < 7; i++) {
+    parts.push(vcCyl(r * 1.02, r * 1.02, r * 0.16, 14, P.yarn2, true)
+      .rotateX(Math.PI / 2 + i * 0.41).rotateY(i * 0.73));
+  }
+  parts.push(vcCyl(r * 0.05, r * 0.05, r * 1.6, 5, P.yarn2).rotateZ(1.1).translate(r * 0.9, r * 0.6, 0));
+  return vcMesh(parts);
+}
+/* a sparkle vent: the dream's version of the market's floor grate */
+function propSparkleRing(x, z, r, P, y) {
+  const b = y || 0;
+  FLOORQ(x - r, z - r, x + r, z + r, b + 0.018, P.cush2);
+  for (let i = 0; i < 9; i++) {
+    const a = i / 9 * TAU;
+    G(x + Math.cos(a) * r * 0.78, b + 0.10, z + Math.sin(a) * r * 0.78, 0.22, 0.16, 0.22, P.star, a);
+  }
+  CYL(x, b + 0.05, z, r * 0.52, r * 0.62, 0.10, 10, P.cush3);
+  GLOW(x, b + 1.10, z, 3.0, P.star, 1.1);
+  GLOW(x, b + 2.80, z, 2.2, P.cush3, 0.8);
+}
+/* pastel clouds.  EMISSIVE (unlit) domes: the first pass baked them, and a
+   lit dome seen from below shades to 0.60 with a cool tint — every cloud in
+   the dream came out as a dark purple umbrella.  Flat and wide, too: a tall
+   dome reads as a hill, and this level has no hills. */
+function propCloud(x, y, z, s, P) {
+  const md = bandMD(z);
+  const c = rgb(P.cloud), c2 = rgb(P.cush1);
+  domeMD(md, x, y, z, s, s * 0.34, 10, 2, c, true);
+  domeMD(md, x - s * 0.78, y - 0.14, z + s * 0.26, s * 0.64, s * 0.26, 9, 2, c, true);
+  domeMD(md, x + s * 0.80, y - 0.16, z - s * 0.22, s * 0.60, s * 0.24, 9, 2, c, true);
+  domeMD(md, x + s * 0.14, y + s * 0.18, z - s * 0.30, s * 0.52, s * 0.26, 9, 2, c, true);
+  /* a soft underside so it is not a paper cut-out from below */
+  domeMD(md, x, y - 0.02, z, s * 0.96, -0.001, 10, 1, c2, true);
+}
+/* a CANOPY cluster — leaf domes with no solid, purely to put foliage in the
+   air.  Romp 5's canopy walk was a set of planks floating in a glass box
+   until these went in: a canopy walk needs a canopy. */
+function propCanopy(x, y, z, s, P) {
+  const md = bandMD(z);
+  const a = rgb(P.leafBig), b = rgb(P.leafBigD), d = rgb(P.leaf);
+  domeMD(md, x, y, z, s, s * 0.46, 9, 2, a);
+  domeMD(md, x - s * 0.72, y - s * 0.14, z + s * 0.30, s * 0.62, s * 0.38, 8, 2, b);
+  domeMD(md, x + s * 0.74, y - s * 0.16, z - s * 0.26, s * 0.58, s * 0.34, 8, 2, d);
+  domeMD(md, x + s * 0.10, y + s * 0.22, z - s * 0.34, s * 0.50, s * 0.30, 8, 2, a);
+  /* a few leaf blades poking out of the mass, so the silhouette is not a ball */
+  for (let i = 0; i < 6; i++) {
+    const ang = i / 6 * TAU;
+    G(x + Math.cos(ang) * s * 0.92, y + s * 0.10, z + Math.sin(ang) * s * 0.92,
+      s * 0.82, 0.10, s * 0.26, i % 2 ? P.leafBig : P.leaf, ang);
+  }
+}
+/* the dream's throne column: a pastel plinth under the CUCUMBER KING's
+   platform, so his arena reads as a throne room and not as a floating box */
+function propThroneColumn(x, z, h, P) {
+  CYL(x, h * 0.5, z, 1.10, 1.45, h, 12, P.throneD);
+  for (let yy = 1.6; yy < h; yy += 2.2) CYL(x, yy, z, 1.55, 1.55, 0.22, 12, P.throne);
+  DOME(x, h * 0.5, z, 1.7, 0.9, 12, 2, rgb(P.throne));
+  S(x, h * 0.5, z, 2.4, h, 2.4, 'solid');
+  GLOW(x, h + 0.7, z, 1.6, P.cush1, 0.6);
+}
+
+/* the DAY skyline (romp 6).  Romp 3's night skyline pushes its towers out to
+   fixed ±X, which only works on a straight level; romp 6 TURNS, so the towers
+   are scattered over the route's WORLD footprint and any that land on the
+   route itself are rejected against the sampled centre line.  One unlit
+   merged mesh, fog:false, exactly like the night one. */
+function buildSkylineDay(pal, len) {
+  const md = _farMD;
+  const rnd = mkRnd(60613);
+  const path = [];
+  for (let d = -70; d < len + 90; d += 6) {
+    twMap(d, 0, 0, _tw2);
+    path.push([_tw2[0], _tw2[2]]);
+  }
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+  for (const p of path) {
+    if (p[0] < x0) x0 = p[0];
+    if (p[0] > x1) x1 = p[0];
+    if (p[1] < z0) z0 = p[1];
+    if (p[1] > z1) z1 = p[1];
+  }
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const R = Math.max(x1 - x0, z1 - z0) / 2 + 230;
+  /* the VISTA WANTS DISTANCE, not scale — romp 3 learned this the hard way
+     ("at 34 m they towered over the rooftop and ate the frame").  54 m was
+     still far too close: a 100 m tower that near reads as a wall two lanes
+     over, and the rooftop run stopped feeling like a rooftop. */
+  const clear2 = 120 * 120;
+  let placed = 0;
+  for (let n = 0; n < 900 && placed < 38; n++) {
+    const a = rnd() * TAU, rr = 110 + rnd() * R;
+    const bx = cx + Math.cos(a) * rr, bz = cz + Math.sin(a) * rr;
+    let ok = true;
+    for (let i = 0; i < path.length; i++) {
+      const dx = path[i][0] - bx, dz = path[i][1] - bz;
+      if (dx * dx + dz * dz < clear2) { ok = false; break; }
+    }
+    if (!ok) continue;
+    placed++;
+    const w = 16 + rnd() * 26, d = 16 + rnd() * 24, h = 24 + rnd() * 86;
+    const body = [pal.dayCity1, pal.dayCity2, pal.dayCity3][placed % 3];
+    boxMD(md, bx, h / 2, bz, w, h, d, body);
+    /* four glass ribbons, so a tower reads the same from every heading */
+    for (let yy = 5; yy < h - 4; yy += Math.max(7, h / 7)) {
+      boxMD(md, bx, yy, bz, w + 0.6, 2.4, d + 0.6, pal.dayWin);
+    }
+    if (h > 62) {
+      boxMD(md, bx, h + 3.0, bz, 1.2, 6.0, 1.2, pal.dayCity3);
+      boxMD(md, bx, h + 6.4, bz, 0.9, 0.9, 0.9, 0xff6a4a);
+    }
+  }
+  /* the pale haze band at the horizon, so the city does not end on a hard cut */
+  for (let i = 0; i < 40; i++) {
+    const a = i / 40 * TAU, a2 = (i + 1) / 40 * TAU, r = R + 90;
+    const p0 = [cx + Math.cos(a) * r, cz + Math.sin(a) * r];
+    const p1 = [cx + Math.cos(a2) * r, cz + Math.sin(a2) * r];
+    pushTriRaw(md, p0[0], -18, p0[1], p1[0], -18, p1[1], p1[0], 22, p1[1], pal.haze);
+    pushTriRaw(md, p0[0], -18, p0[1], p1[0], 22, p1[1], p0[0], 22, p0[1], pal.haze);
+  }
+}
+
 /* the far daylight backdrop for L1/L2 — soft hills / neighbour houses */
 function buildFarDay(pal, z0, z1, kind) {
   const md = _farMD;

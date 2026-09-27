@@ -91,6 +91,10 @@ try {
   await sleep(500);
   await page.screenshot(OUT + '/09-results.png');
   await page.pressPad('south');
+  /* GOOD KITTY now plays after the LAST romp, not after romp 3 (LEVELS2 §C),
+     so this battery asks for the screen directly */
+  await sleep(600);
+  await page.eval("__zoomies.setState('KITTY')");
   await page.waitFor("__zoomies.state()==='KITTY'", 'KITTY', 8000);
   await sleep(600);
   await page.screenshot(OUT + '/10-goodkitty.png');

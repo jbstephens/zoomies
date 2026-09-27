@@ -42,7 +42,193 @@ const CAT = {
   idleT: 0, idleStage: 0, idleWall: false, tailFlick: 0,
   cp: { x: 0, y: 0, z: 0 }, shadowY: 0, launchCD: 0, stepT: 0,
   onMover: null, bestZ: 0, deaths: 0, jumpsMade: 0, cukeLaunches: 0,
+  /* THE BIG OUTSIDE verbs (LEVELS2 §A) — all three are inert on romps 1–3
+     because their WORLD lists are empty there */
+  onZip: null, zipT: 0, zipDir: 1, zipCD: 0, zipRides: 0,
+  ventT: 0, ventRides: 0, slickT: 0, breathT: 0, moverRides: 0, moverT: 0,
 };
+
+/* ── the two new traversal verbs + the slick floor ─────────────────────
+   VENT  — `vent(x, z, r, power)`: a gentle updraft column.  While the cat
+           is inside it he floats UP at `power` m/s (not a cannon — the
+           design says float), keeps one air jump, and the column breathes
+           visible rising motes.
+   ZIP   — `zip(x0,z0,x1,z1,y0,y1)`: jump within ~1.2 m of the line to grab
+           it, dangle by the front paws, auto-slide to the LOWER end at
+           ~9 m/s, ✕ drops with a hop, auto-release at the end.  Kid-proof:
+           no balance, no mashing.
+   SLICK — `slick(x, z0, z1, w, k, cold)`: a low-friction floor patch (the
+           freezer, and SIR MOPSALOT's puddles).  It NEVER damages.       */
+/* ZIP feel knobs.  ZIP_SPEED is the default; a line may override it with its
+   own `sp` — romp 6's three avenue crossings are 20–26 m and at 9 m/s a long
+   line reads as a slow bus ride rather than a swing, so they run at 12.5.
+   Romp 4's 18 m price-check line passes no `sp` and is untouched. */
+const ZIP_GRAB_R = 1.25, ZIP_SPEED = 9.0, ZIP_DANGLE = 0.62;
+function zipSpeed(v) { return v.sp || ZIP_SPEED; }
+
+function slickAt(x, z) {
+  const L = WORLD.slick;
+  for (let i = 0; i < L.length; i++) {
+    const s = L[i];
+    if (!s.on) continue;
+    if (x > s.x0 && x < s.x1 && z > s.z0 && z < s.z1) return s.k;
+  }
+  return 0;
+}
+function slickCold(x, z) {
+  const L = WORLD.slick;
+  for (let i = 0; i < L.length; i++) {
+    const s = L[i];
+    if (s.on && s.cold && x > s.x0 && x < s.x1 && z > s.z0 && z < s.z1) return true;
+  }
+  return false;
+}
+function addSlick(x0, x1, z0, z1, k, cold) {
+  WORLD.slick.push({ x0, x1, z0, z1, k: k == null ? 1 : k, cold: !!cold, on: true, g: null });
+  return WORLD.slick[WORLD.slick.length - 1];
+}
+
+function zipPoint(v, t, out) {
+  out[0] = lerp(v.x0, v.x1, t);
+  out[1] = lerp(v.y0, v.y1, t);
+  out[2] = lerp(v.z0, v.z1, t);
+  return out;
+}
+const _zp = [0, 0, 0];
+function zipGrabTry() {
+  if (CAT.onZip || CAT.grounded || CAT.zipCD > 0 || CAT.fainted) return false;
+  const Z = WORLD.zips;
+  for (let i = 0; i < Z.length; i++) {
+    const v = Z[i];
+    /* closest point on the segment to the cat's paws */
+    const dx = v.x1 - v.x0, dy = v.y1 - v.y0, dz = v.z1 - v.z0;
+    const L2 = dx * dx + dy * dy + dz * dz || 1;
+    let t = ((CAT.x - v.x0) * dx + (CAT.y + ZIP_DANGLE - v.y0) * dy + (CAT.z - v.z0) * dz) / L2;
+    t = clamp(t, 0, 1);
+    zipPoint(v, t, _zp);
+    const d = Math.hypot(CAT.x - _zp[0], CAT.y + ZIP_DANGLE - _zp[1], CAT.z - _zp[2]);
+    if (d > ZIP_GRAB_R) continue;
+    CAT.onZip = v; CAT.zipT = t;
+    CAT.zipDir = (v.y1 <= v.y0) ? 1 : -1;      // always slide to the LOW end
+    CAT.zipRides++;
+    CAT.vx = CAT.vy = CAT.vz = 0;
+    CAT.rolling = false; CAT.pouncing = false;
+    cat.stretch = 1;
+    sfxZipGrab();
+    return true;
+  }
+  return false;
+}
+function zipRelease(hop) {
+  const v = CAT.onZip;
+  if (!v) return;
+  CAT.onZip = null;
+  CAT.zipCD = 0.40;
+  CAT.grounded = false;
+  CAT.jumps = 1;
+  /* a ✕-drop keeps the ride's momentum (that IS the dismount); reaching the
+     END is a gentle step-off — carrying 9 m/s into the far pole just threw
+     the cat past the landing platform */
+  const sp = zipSpeed(v) * CAT.zipDir * (hop ? 1.0 : 0.30) / Math.max(0.001, v.len);
+  CAT.vx = (v.x1 - v.x0) * sp;
+  CAT.vz = (v.z1 - v.z0) * sp;
+  CAT.vy = hop ? 6.4 : 2.6;
+  sfxZipDrop();
+}
+function zipRide(dt, inp) {
+  const v = CAT.onZip;
+  CAT.zipT = clamp(CAT.zipT + CAT.zipDir * zipSpeed(v) / Math.max(0.001, v.len) * dt, 0, 1);
+  zipPoint(v, CAT.zipT, _zp);
+  CAT.x = _zp[0]; CAT.y = _zp[1] - ZIP_DANGLE; CAT.z = _zp[2];
+  CAT.vx = CAT.vy = CAT.vz = 0;
+  CAT.grounded = false;
+  CAT.face = Math.atan2((v.x1 - v.x0) * CAT.zipDir, (v.z1 - v.z0) * CAT.zipDir);
+  CAT.shadowY = Math.max(-2, groundUnder(CAT.x, CAT.z, CAT.y + 0.05));
+  if ((simTicks % 7) === 0)
+    spark(CAT.x, CAT.y + ZIP_DANGLE + 0.1, CAT.z, 0, -0.6, 0, 0.30, 0.16, 0.02, 1.0, 0.95, 0.72, 2);
+  if ((simTicks % 20) === 0) sfxZipRun();
+  if (inp.jumpEdge) { zipRelease(true); return; }
+  if (CAT.zipT <= 0 || CAT.zipT >= 1) zipRelease(false);
+}
+function updateVents(dt) {
+  const V = WORLD.vents;
+  const inBefore = CAT.ventT > 0;
+  if (CAT.ventT > 0) CAT.ventT -= dt;
+  for (let i = 0; i < V.length; i++) {
+    const v = V[i];
+    const dz = v.z - CAT.z;
+    if (dz < -26 || dz > 44) continue;
+    /* the visible updraft: rising motes, whether or not the cat is in it */
+    if ((simTicks % 5) === 0)
+      spark(v.x + (Math.random() - 0.5) * v.r * 1.4, v.y0 + 0.2 + Math.random() * 0.8,
+        v.z + (Math.random() - 0.5) * v.r * 1.4, 0, 3.0 + Math.random() * 2.2, 0,
+        1.10, 0.20, 0.02, 0.86, 0.96, 1.0, -1.2);
+    if (CAT.fainted || CAT.onZip) continue;
+    const dx = CAT.x - v.x, dd = CAT.z - v.z;
+    if (dx * dx + dd * dd > v.r * v.r) continue;
+    if (CAT.y < v.y0 - 0.6 || CAT.y > v.y0 + v.h) continue;
+    if (CAT.vy < v.power) CAT.vy = Math.min(v.power, CAT.vy + v.power * 6 * dt);
+    CAT.grounded = false; CAT.coyote = 0;
+    if (CAT.jumps === 0) CAT.jumps = 1;
+    if (!inBefore) CAT.ventRides++;
+    CAT.ventT = 0.25;
+    if ((simTicks % 24) === 0) sfxVentHiss();
+    break;
+  }
+}
+/* the cold half of a slick patch: visible breath puffs (design charm, and
+   the read that tells a kid "this floor is ice") */
+function updateCold(dt) {
+  if (!slickCold(CAT.x, CAT.z)) { CAT.breathT = 0; return; }
+  CAT.breathT -= dt;
+  if (CAT.breathT > 0) return;
+  CAT.breathT = 0.85 + Math.random() * 0.5;
+  for (let i = 0; i < 4; i++)
+    spark(CAT.x + Math.sin(CAT.face) * 0.42 + (Math.random() - 0.5) * 0.2,
+      CAT.y + 0.62 + Math.random() * 0.1,
+      CAT.z + Math.cos(CAT.face) * 0.42 + (Math.random() - 0.5) * 0.2,
+      Math.sin(CAT.face) * 1.1, 0.7, Math.cos(CAT.face) * 1.1,
+      0.75, 0.10, 0.30, 0.90, 0.96, 1.0, -0.5);
+}
+/* the PA gag: a one-shot line as the cat passes a trigger z */
+function updateSays() {
+  const S = WORLD.says;
+  for (let i = 0; i < S.length; i++) {
+    const s = S[i];
+    if (s.said || CAT.z < s.z) continue;
+    s.said = true;
+    banner(s.main, s.sub);
+    sfxPA();
+  }
+}
+/* ONE call from tickSim, right after the solver, and every branch inside
+   early-outs on an empty list — romps 1–3 pay nothing and behave identically */
+function updateWorldVerbs(dt) {
+  if (CAT.zipCD > 0) CAT.zipCD -= dt;
+  /* conveyor / mover rides, counted for the harness (no behaviour attached) */
+  if (CAT.onMover) { if (CAT.moverT <= 0) CAT.moverRides++; CAT.moverT = 0.25; }
+  else if (CAT.moverT > 0) CAT.moverT -= dt;
+  if (WORLD.vents.length) updateVents(dt);
+  if (WORLD.zips.length) zipGrabTry();
+  if (WORLD.slick.length) updateCold(dt);
+  if (WORLD.says.length) updateSays();
+}
+/* the sim tail every branch shares (so the zip state can skip the solver
+   without a single line of the solver being touched) */
+function simTail(dt, anyInput) {
+  updateAttacks(dt);
+  updateEnts(dt);
+  updateProj(dt);
+  contactCheck(dt);
+  updateKibble(dt);
+  updatePicks(dt);
+  updateCheckpoints();
+  updateBoss(dt);
+  updateIdle(dt, anyInput);
+  stepPool(sparks, dt);
+  stepPool(bits, dt);
+  if (CAT.z > CAT.bestZ) CAT.bestZ = CAT.z;
+}
 
 function clearEntities() {
   for (const e of ENTS) if (e.g) { scene.remove(e.g); disposeTree(e.g); }
@@ -258,7 +444,13 @@ function updateMovers(dt) {
     m.x0 = m.cx - m.sx / 2; m.x1 = m.cx + m.sx / 2;
     m.y0 = m.cy - m.sy / 2; m.y1 = m.cy + m.sy / 2;
     m.z0 = m.cz - m.sz / 2; m.z1 = m.cz + m.sz / 2;
-    if (m.g) m.g.position.set(m.cx, m.cy, m.cz);
+    if (m.g) { twPos(m.g, m.cx, m.cy, m.cz); m.g.rotation.y = twYaw(m.cz, 0); }
+    /* a romp-7 yarn planet ROLLS: the child mesh spins about the axis it is
+       travelling along, inside the carrier the line above just positioned */
+    if (m.g2 && m.rollR > 0.01) {
+      if (m.ax === 'x') m.g2.rotation.z -= (m.cx - px) / m.rollR;
+      else m.g2.rotation.x += (m.cz - pz) / m.rollR;
+    }
   }
 }
 
@@ -443,6 +635,7 @@ function hurtCat(fx, fz, force) {
 function faint() {
   CAT.hearts = 0;
   CAT.fainted = true;
+  if (CAT.onZip) { CAT.onZip = null; CAT.zipCD = 0.4; }
   CAT.faintT = 1.5;
   CAT.deaths++;
   CAT.rolling = false; CAT.pouncing = false;
@@ -468,6 +661,7 @@ function respawn(full) {
   CAT.rolling = false; CAT.pouncing = false;
   CAT.scratchT = 0; CAT.whipT = 0; CAT.twistT = 0;
   CAT.jumps = 0; CAT.grounded = true;
+  CAT.onZip = null; CAT.zipCD = 0; CAT.ventT = 0;
   CAT.invuln = MERCY;
   if (full) CAT.hearts = 3;
   hudHearts();
@@ -700,7 +894,29 @@ function camSnap() {
   CAM.tx = CAT.x * 0.86; CAM.ty = CAT.y + 0.85; CAM.tz = CAT.z + 1.5;
   applyCam();
 }
+/* The camera lives in TRACK space (CAM.z = along-track, CAM.x = lateral) and
+   is mapped to the world right here, boom AND look-at both.  That is the whole
+   corner camera: because the two ends of the boom map through the same arc,
+   the yaw comes out as the heading at the cat's d, EASED across the bend, for
+   free — no separate yaw blend to tune, and no way for it to disagree with
+   where the cat actually is (LEVELS2 §A). */
 function applyCam() {
+  if (TW.on) {
+    twMap(CAM.z, CAM.x, CAM.y, _tw);
+    camera.position.set(_tw[0], _tw[1], _tw[2]);
+    twMap(CAM.z - 2.0, CAM.x, CAM.y + 3.2, _tw);
+    fillLight.position.set(_tw[0], _tw[1], _tw[2]);
+    twMap(CAT.z + 2, CAT.x, CAT.y + 0.4, _tw);
+    fillLight.target.position.set(_tw[0], _tw[1], _tw[2]);
+    fillLight.target.updateMatrixWorld();
+    twMap(CAM.tz, CAM.tx, CAM.ty, _tw);
+    camera.lookAt(_tw[0], _tw[1], _tw[2]);
+    camera.fov = CAM.fov;
+    camera.updateProjectionMatrix();
+    twMap(CAT.z + 6, CAT.x, CAT.y, _tw);
+    aimSun(_tw[0], _tw[1], _tw[2]);
+    return;
+  }
   camera.position.set(CAM.x, CAM.y, CAM.z);
   /* the fill light rides the lens so the cat never silhouettes into a blob */
   fillLight.position.set(CAM.x, CAM.y + 3.2, CAM.z - 2.0);
@@ -713,9 +929,14 @@ function applyCam() {
 }
 function updateCam(dt) {
   const arena = !!(BOSS && BOSS.alive && BOSS.engaged);
-  const wantDist = arena ? 8.6 : (CAT.zoomT > 0 ? 7.1 : 6.1);
-  const wantHigh = arena ? 3.7 : (CAT.zoomT > 0 ? 2.85 : 2.55);
-  const wantFov = arena ? 60 : (CAT.zoomT > 0 ? 62 : 55);
+  /* A HIGH boss needs a wider, further, taller rig or he simply will not fit
+     on screen: THE CUCUMBER KING's throne teleports to 11.4 m over a 4 m arena
+     floor.  Keyed on "more than 5 m above the cat", which no earlier boss ever
+     is (the Raccoon King tops out at 4.18), so nothing shipped moves. */
+  const hiBoss = arena && BOSS.y - CAT.y > 5;
+  const wantDist = arena ? (hiBoss ? 11.0 : 8.6) : (CAT.zoomT > 0 ? 7.1 : 6.1);
+  const wantHigh = arena ? (hiBoss ? 4.4 : 3.7) : (CAT.zoomT > 0 ? 2.85 : 2.55);
+  const wantFov = arena ? (hiBoss ? 66 : 60) : (CAT.zoomT > 0 ? 62 : 55);
   CAM.dist = smooth(CAM.dist, wantDist, 0.045, dt);
   CAM.high = smooth(CAM.high, wantHigh, 0.045, dt);
   CAM.fov = smooth(CAM.fov, wantFov, 0.045, dt);
@@ -741,7 +962,11 @@ function updateCam(dt) {
   CAM.tx = smooth(CAM.tx, CAT.x * 0.86, 0.16, dt);
   /* an elevated boss (the Raccoon King on his water tower) must be IN the
      frame, not above it — the look-at rises toward him while engaged */
-  const lift = (arena && BOSS && BOSS.y > 2) ? Math.min(2.4, (BOSS.y - CAT.y) * 0.46) : 0;
+  /* THE CUCUMBER KING's throne teleports to 12.6 m over a 4 m arena floor, and
+     at the old 2.4 m cap the lens stayed pointed at the UNDERSIDE of his deck.
+     The cap is 4.6 now; the 0.46 factor is unchanged, so every earlier boss
+     (the Raccoon King tops out at 4.18 m) gets the exact same number it did. */
+  const lift = (arena && BOSS && BOSS.y > 2) ? Math.min(4.6, (BOSS.y - CAT.y) * 0.46) : 0;
   CAM.ty = smooth(CAM.ty, CAT.y + 0.80 + climb * 0.18 + lift, 0.10, dt);
   CAM.tz = smooth(CAM.tz, CAT.z + 1.35 + (arena ? 1.6 : 0), 0.16, dt);
   applyCam();
@@ -782,6 +1007,11 @@ function tickSim(inp) {
 
   const anyInput = mag > 0.06 || inp.jump || inp.scratch || inp.whip || inp.roll;
 
+  /* ON A ZIPLINE the corridor solver is not consulted at all — the wire owns
+     the cat's position.  This early-out is the ONLY reason a new traversal
+     verb needed no change to moveCat() (LAW: the track-space solver stays). */
+  if (CAT.onZip) { zipRide(dt, inp); simTail(dt, true); return; }
+
   /* roll ("zoomies") — East held on the ground */
   if (inp.roll && CAT.grounded && !CAT.pouncing && CAT.scratchT <= 0 && CAT.whipT <= 0) {
     if (!CAT.rolling) { CAT.rolling = true; sfxRollStart(); }
@@ -795,8 +1025,14 @@ function tickSim(inp) {
   if (inp.rollEdge && !CAT.grounded) doPounce();   // ○ in the air = POUNCE
 
   const speedCap = RUN_MAX * (CAT.rolling ? ROLL_MULT : 1) * (CAT.zoomT > 0 ? ZOOM_SPEED : 1);
-  const acc = CAT.grounded ? (CAT.rolling ? ACC_G * 0.55 : ACC_G) : ACC_A;
+  /* the freezer / a mopped puddle: grip drops, braking drops MORE (that is
+     what reads as ice), and it never costs a heart.  Zero patches → the two
+     factors are exactly 1 and the arithmetic below is bit-identical. */
+  const slick = (WORLD.slick.length && CAT.grounded) ? slickAt(CAT.x, CAT.z) : 0;
+  const accK = slick ? 1 - 0.66 * slick : 1;
+  const acc = (CAT.grounded ? (CAT.rolling ? ACC_G * 0.55 : ACC_G) : ACC_A) * accK;
   const dec = CAT.grounded ? (CAT.rolling ? DEC_G * 0.30 : DEC_G) : ACC_A * 0.5;
+  if (slick) CAT.slickT = 0.2; else if (CAT.slickT > 0) CAT.slickT -= dt;
 
   if (CAT.zoomT > 0) {
     /* ZOOMIES MODE: an automatic forward burst you can steer */
@@ -807,7 +1043,9 @@ function tickSim(inp) {
     CAT.vx += (wantX * speedCap - CAT.vx) * acc / speedCap * dt * 2.2;
     CAT.vz += (wantZ * speedCap - CAT.vz) * acc / speedCap * dt * 2.2;
   } else {
-    const k = Math.pow(0.0009 + (CAT.rolling ? 0.35 : 0), dt);
+    /* on a slick patch the cat KEEPS most of his speed when you let go —
+       the glide IS the mechanic (and the freezer's whole joke) */
+    const k = Math.pow(0.0009 + (CAT.rolling ? 0.35 : 0) + (slick ? 0.58 * slick : 0), dt);
     CAT.vx *= k; CAT.vz *= k;
     if (Math.abs(CAT.vx) < 0.02) CAT.vx = 0;
     if (Math.abs(CAT.vz) < 0.02) CAT.vz = 0;
@@ -840,12 +1078,15 @@ function tickSim(inp) {
     if (CAT.jumpHoldT > JUMP_HOLD_MAX || CAT.vy <= 0) CAT.holdJump = false;
   }
 
-  /* — gravity — */
-  const g = (CAT.holdJump && CAT.vy > 0) ? GRAV_HOLD : GRAV;
+  /* — gravity —
+     WORLD.gravK is the per-level sim constant (1 everywhere today; romp 7's
+     dreamland wants 0.8 — LEVELS2 §B).  ×1 is exact, so nothing moves. */
+  const g = ((CAT.holdJump && CAT.vy > 0) ? GRAV_HOLD : GRAV) * WORLD.gravK;
   CAT.vy -= g * dt;
   if (CAT.vy < -GRAV_CAP) CAT.vy = -GRAV_CAP;
 
   moveCat(dt);
+  updateWorldVerbs(dt);
 
   /* footfall taps, surface-varied by the material under the paw */
   if (CAT.grounded && sp > 1.2 && !CAT.rolling) {

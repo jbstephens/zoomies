@@ -46,11 +46,11 @@ function spawnBoss(kind, z) {
     ]);
     button.position.set(0, 1.10, 0);
     g.add(body, eyes, button);
-    g.position.set(0, 0, z + 8);
+    twFace(g, 0, 0, z + 8, 0);
     if (LOOK && FX.shadow) body.castShadow = true;
     scene.add(g);
     BOSS = {
-      k: 'vac', name: 'MOTHER VACUUM', x: 0, y: 0, z: z + 8, x0: 0, z0: z + 8,
+      k: 'vac', name: 'MOTHER VACUUM', x: 0, y: 0, z: z + 8, x0: 0, z0: z + 8, yaw: 0,
       hp: 3, alive: true, engaged: false, st: 0, stT: 2.2, t: 0,
       g, body, eyes, button, ring: makeRing(0xffd08a), crown: null,
       r: 1.9, h: 1.3, gateZ: z - 15, vx: 0, vz: 0, minis: 0,
@@ -67,17 +67,25 @@ function spawnBoss(kind, z) {
     collar.position.set(0, 1.52, 0.84);
     collar.scale.setScalar(1.45);
     g.add(body, head, collar);
-    g.position.set(0, 0, z + 9);
+    twFace(g, 0, 0, z + 9, 0);
     if (LOOK && FX.shadow) { body.castShadow = true; head.castShadow = true; }
     scene.add(g);
     BOSS = {
-      k: 'rex', name: 'REX THE ROOMMATE', x: 0, y: 0, z: z + 9, x0: 0, z0: z + 9,
+      k: 'rex', name: 'REX THE ROOMMATE', x: 0, y: 0, z: z + 9, x0: 0, z0: z + 9, yaw: 0,
       hp: 3, alive: true, engaged: false, st: 0, stT: 1.9, t: 0,
       g, body, head, collar, ring: makeRing(0xffe0a0), crown: null,
       r: 2.1, h: 2.9, gateZ: z - 15, vx: 0, vz: 0,
       noseX: 0, noseY: 2.2, noseZ: 0, ringR: 0, ringOn: false,
       winT: 0, hitFlash: 0, friend: false, dig: 0,
     };
+  } else if (kind === 'mop') {
+    BOSS = spawnMopsalot(z);
+  } else if (kind === 'bee') {
+    BOSS = spawnQueenBee(z);
+  } else if (kind === 'drone') {
+    BOSS = spawnDrone9000(z);
+  } else if (kind === 'cuke') {
+    BOSS = spawnCukeKing(z);
   } else {
     const g = new THREE.Group();
     const body = mCoon();
@@ -93,15 +101,15 @@ function spawnBoss(kind, z) {
     g.add(body, crown);
     /* he holds court at the FRONT of the water tower deck, clear of the
        tank, so the arena camera can actually see him */
-    g.position.set(0, 4.18, z + 5.4);
+    twFace(g, 0, 4.18, z + 5.4, 0);
     if (LOOK && FX.shadow) body.castShadow = true;
     scene.add(g);
     BOSS = {
-      k: 'coon', name: 'THE RACCOON KING', x: 0, y: 4.18, z: z + 5.4, x0: 0, z0: z + 5.4,
+      k: 'coon', name: 'THE RACCOON KING', x: 0, y: 4.18, z: z + 5.4, x0: 0, z0: z + 5.4, yaw: 0,
       hp: 3, alive: true, engaged: false, st: 0, stT: 1.4, t: 0,
       g, body, crownMesh: crown, ring: makeRing(0xffb0d8), crown: null,
       r: 1.3, h: 2.0, gateZ: z - 15, vx: 0, vz: 0, throws: 0,
-      winT: 0, hitFlash: 0, peelT: 0,
+      winT: 0, hitFlash: 0, peelT: 0, wx: 0, wy: 4.18, wz: z + 5.4,
     };
   }
   return BOSS;
@@ -112,7 +120,13 @@ function bossReset() {
   BOSS.st = 0; BOSS.stT = 2.2; BOSS.x = BOSS.x0; BOSS.z = BOSS.z0;
   BOSS.vx = 0; BOSS.vz = 0; BOSS.ringOn = false;
   if (BOSS.ring) BOSS.ring.visible = false;
-  if (BOSS.g) BOSS.g.position.set(BOSS.x, BOSS.y, BOSS.z);
+  if (BOSS.g && !BOSS.ridesMover) twPos(BOSS.g, BOSS.x, BOSS.y, BOSS.z);
+  if (BOSS.k === 'mop') mopReset();
+  if (BOSS.k === 'drone') { BOSS.y = BOSS.y0; BOSS.st = 0; BOSS.stT = 2.2; }
+  /* THE CUCUMBER KING keeps his phase (and therefore his platform height and
+     his cucumber rank) across a respawn — losing the climb you just earned
+     because you slipped off the arena is not the kid-proof deal */
+  if (BOSS.k === 'cuke') kingPlant(BOSS.phase);
   for (const p of PROJ) { p.on = false; p.g.visible = false; }
 }
 
@@ -137,6 +151,28 @@ function bossHit(verb) {
     BOSS.minis += 2;
   } else if (BOSS.k === 'rex') {
     BOSS.st = 0; BOSS.stT = 1.7;
+  } else if (BOSS.k === 'mop') {
+    /* between hits he mops ANOTHER slick strip the cat has to jump */
+    BOSS.st = 5; BOSS.stT = 1.5;
+    mopPuddle();
+  } else if (BOSS.k === 'bee') {
+    /* between hits a WAVE OF THREE DRONE BEES sweeps the bed (LEVELS2 §B) */
+    BOSS.st = 2; BOSS.stT = 3.4;
+    for (let i = 0; i < 3; i++) {
+      const e = addEnt('crow', BOSS.x + (i - 1) * 2.8, BOSS.y - 0.6, BOSS.z - 3, { look: 'bee' });
+      e.st = 1; e.stT = 0.5 + i * 0.28; e.y0 = e.y;
+    }
+    sfxBeeSwarm();
+  } else if (BOSS.k === 'drone') {
+    BOSS.st = 5; BOSS.stT = 1.6;
+    sfxDroneSputter();
+  } else if (BOSS.k === 'cuke') {
+    /* he RE-PLANTS a different rank and teleports his platform higher */
+    BOSS.st = 5; BOSS.stT = 1.7;
+    BOSS.phase = Math.min(2, BOSS.phase + 1);
+    kingLift(BOSS.phase);
+    kingPlant(BOSS.phase);
+    sfxSproing(0.85);
   } else {
     BOSS.st = 2; BOSS.stT = 3.0;
     for (let i = 0; i < 5; i++) {
@@ -150,15 +186,30 @@ function bossHit(verb) {
 
 function bossDefeat() {
   BOSS.alive = true;                 // still on stage — it plays its exit
-  BOSS.winT = BOSS.k === 'rex' ? 3.6 : 3.0;
+  BOSS.winT = (BOSS.k === 'rex' || BOSS.k === 'mop') ? 3.6
+    : (BOSS.k === 'bee' || BOSS.k === 'drone' || BOSS.k === 'cuke') ? 3.8 : 3.0;
   BOSS.st = 90;
+  BOSS.wx = BOSS.x; BOSS.wy = BOSS.y; BOSS.wz = BOSS.z;
   BOSS.ringOn = false;
   if (BOSS.ring) BOSS.ring.visible = false;
   for (const p of PROJ) { p.on = false; p.g.visible = false; }
   for (const e of ENTS) if (e.alive && e.bonk && Math.abs(e.z - BOSS.z) < 30) killEnt(e);
   if (BOSS.k === 'vac') { banner('MOTHER DOWN!', 'the carpet is yours'); sfxFanfare(); }
   else if (BOSS.k === 'rex') { banner('REX IS YOUR FRIEND!', 'he is howling you a fanfare'); sfxHowl(); }
-  else { banner('LONG LIVE THE CAT!', 'the crown is yours'); sfxFanfare(); }
+  else if (BOSS.k === 'mop') {
+    banner('CLEAN-UP, AISLE CAT!', 'he is taking a little sit down');
+    sfxMopSqueak(0.7); sfxFanfare();
+    if (BOSS.cone) BOSS.cone.visible = true;
+  } else if (BOSS.k === 'bee') {
+    banner('THE QUEEN IS DELIGHTED!', 'she is fetching you a honey jar');
+    sfxBeeSwarm(0.6); sfxFanfare();
+  } else if (BOSS.k === 'drone') {
+    banner('DELIVERY COMPLETE!', 'signed for by one (1) cat');
+    sfxDroneSputter(); sfxFanfare();
+  } else if (BOSS.k === 'cuke') {
+    banner('CONFETTI PICKLES!', 'the dream is raining treats');
+    sfxSproing(1.35); sfxPickleConfetti(); sfxFanfare();
+  } else { banner('LONG LIVE THE CAT!', 'the crown is yours'); sfxFanfare(); }
   for (let i = 0; i < 40; i++) {
     const a = Math.random() * TAU;
     bit(BOSS.x, BOSS.y + 1.6, BOSS.z, Math.cos(a) * 6, 5 + Math.random() * 6, Math.sin(a) * 6,
@@ -177,22 +228,53 @@ function bossMeleeHit(x, y, z, r, verb) {
     if (Math.hypot(bx - x, bz - z) < r + 1.0 && y < by + 2.2) {
       if (bossHit(verb)) CAT.vy = 9.5;      // pounce BOUNCES off the big ones
     }
+  } else if (BOSS.k === 'mop') {
+    if (BOSS.st !== 4) return;                         // only while he is down
+    if (verb !== 'pounce') return;                     // POUNCE the janitor
+    if (Math.hypot(BOSS.x - x, BOSS.z - z) < r + 1.5 && y < BOSS.y + 2.2) {
+      if (bossHit(verb)) CAT.vy = 9.5;                 // and bounce off him
+    }
+  } else if (BOSS.k === 'drone') {
+    if (BOSS.st !== 4) return;                         // only while recharging
+    if (verb !== 'pounce') return;                     // POUNCE the drone
+    if (Math.hypot(BOSS.x - x, BOSS.z - z) < r + 1.6 && y < BOSS.y + 2.4) {
+      if (bossHit(verb)) CAT.vy = 9.5;
+    }
   } else if (BOSS.k === 'rex') {
     if (BOSS.st !== 3) return;                         // only while panting
     if (Math.hypot(BOSS.noseX - x, BOSS.noseZ - z) < r + 1.1 &&
         y > BOSS.noseY - 1.3 && y < BOSS.noseY + 1.6) bossHit(verb);
   }
-  /* the King is out of reach on purpose — he only takes reflected trash */
+  /* THE CUCUMBER KING takes NOTHING here.  LAW (LEVELS2 §B): he cannot be
+     damaged by scratch, whip, roll or reflected anything — the fight IS the
+     cucumber-startle mechanic, and the only thing that touches him is a
+     POUNCE ON THE CROWN, which updateCukeKing owns (it has to: the crown is
+     a moving platform 12 m in the air, not a melee range check).
+     The QUEEN BEE is out of reach too — she only takes her own honey back. */
 }
 function bossWhip() { /* reflect is the King's answer; the whip itself is not */ }
 
 function bossProjHit(p) {
   if (!BOSS || !BOSS.alive || BOSS.winT > 0 || p.own !== 1) return;
-  if (BOSS.k !== 'coon') return;
-  if (Math.hypot(BOSS.x - p.x, BOSS.z - p.z) < 2.0 && p.y > BOSS.y - 0.4 && p.y < BOSS.y + 2.6) {
-    p.on = false; p.g.visible = false;
-    bossHit('reflect');
+  if (BOSS.k === 'coon') {
+    if (Math.hypot(BOSS.x - p.x, BOSS.z - p.z) < 2.0 && p.y > BOSS.y - 0.4 && p.y < BOSS.y + 2.6) {
+      p.on = false; p.g.visible = false;
+      bossHit('reflect');
+    }
+    return;
   }
+  if (BOSS.k === 'bee') {
+    /* her own honey, sent back.  A hover 3.4 m up plus a lazy arc means the
+       vertical window has to be generous or a perfect tail-whip sails under
+       her — the exact bug the reflected trash bag had one romp over. */
+    if (Math.hypot(BOSS.x - p.x, BOSS.z - p.z) < 2.6 && p.y > BOSS.y - 1.4 && p.y < BOSS.y + 3.0) {
+      p.on = false; p.g.visible = false;
+      bossHit('reflect');
+    }
+    return;
+  }
+  /* LAW: THE CUCUMBER KING is immune to a reflected anything, and DELIVERY
+     DRONE 9000's own boxes do not damage it either. */
 }
 
 /* ── the loops ─────────────────────────────────────────────────────── */
@@ -208,12 +290,21 @@ function updateBoss(dt) {
       hudBoss(true);
       banner(B.name + '!', B.k === 'vac' ? 'pounce the big red button'
         : B.k === 'rex' ? 'bounce off the doghouse and bop his nose'
+        : B.k === 'mop' ? 'let him slip on his own puddle, then POUNCE'
+        : B.k === 'bee' ? 'tail-whip her honey right back at her'
+        : B.k === 'drone' ? 'wait for it to land, then POUNCE it'
+        : B.k === 'cuke' ? 'LAUNCH off his cucumbers and POUNCE THE CROWN'
         : 'tail-whip his trash right back');
       sfxBossIntro();
       if (B.k === 'vac') sfxVacDroneStart();
+      if (B.k === 'drone') sfxDroneWhirStart();
+      if (B.k === 'bee') sfxBeeSwarm(0.8);
     }
-    /* idle sway so he reads as alive before the fight starts */
-    if (B.g) B.g.position.y = B.y + Math.sin(B.t * 1.4) * 0.03;
+    /* idle sway so he reads as alive before the fight starts.  THE CUCUMBER
+       KING rides his own platform (a mover), so his group is positioned by
+       kingPose and must never be written here. */
+    if (B.g && !B.ridesMover) B.g.position.y = B.y + Math.sin(B.t * 1.4) * 0.03;
+    if (B.k === 'cuke') kingPose(dt);
     return;
   }
 
@@ -229,13 +320,25 @@ function updateBoss(dt) {
       B.g.position.y = smooth(B.g.position.y, B.y - 0.3, 0.05, dt);
       if (B.head) B.head.rotation.x = Math.sin(B.t * 3) * 0.12;
       if ((simTicks % 26) === 0) sfxHowl(0.6);
+    } else if (B.k === 'mop') {
+      mopWin(dt);
+    } else if (B.k === 'bee') {
+      beeWin(dt);
+    } else if (B.k === 'drone') {
+      droneWin(dt);
+    } else if (B.k === 'cuke') {
+      kingWin(dt);
     } else {
-      /* he slips on his own banana peel and tumbles into the dumpster */
+      /* he slips on his own banana peel and tumbles into the dumpster.
+         The tumble is tracked in TRACK space (B.wx/wy/wz) and mapped like
+         everything else — reading it back off the mesh would mix world and
+         track the moment a level turns. */
       B.g.rotation.x += dt * 7;
-      B.g.position.x = smooth(B.g.position.x, 0, 0.05, dt);
-      B.g.position.z = smooth(B.g.position.z, B.z + 6, 0.03, dt);
-      B.g.position.y = smooth(B.g.position.y, 0.9, 0.04, dt);
-      if ((simTicks % 11) === 0) dizzyStars(B.g.position.x, B.g.position.y + 1.6, B.g.position.z, 1);
+      B.wx = smooth(B.wx, 0, 0.05, dt);
+      B.wz = smooth(B.wz, B.z + 6, 0.03, dt);
+      B.wy = smooth(B.wy, 0.9, 0.04, dt);
+      twPos(B.g, B.wx, B.wy, B.wz);
+      if ((simTicks % 11) === 0) dizzyStars(B.wx, B.wy + 1.6, B.wz, 1);
     }
     if (B.winT <= 0) {
       B.alive = false;
@@ -244,8 +347,23 @@ function updateBoss(dt) {
         /* Rex becomes a friend: he trots to the exit gate and sits, wagging */
         B.friend = true;
         B.g.rotation.set(0, Math.PI, 0);
-        B.g.position.set(4.6, 0, WORLD.length - 8);
+        twPos(B.g, 4.6, 0, WORLD.length - 8);
         if (B.head) B.head.rotation.set(0, 0, 0);
+      } else if (B.k === 'mop') {
+        /* he stays on stage: sat down, WET FLOOR cone on his head, waving.
+           Nobody is ever hurt in this game (house law). */
+        B.friend = true;
+      } else if (B.k === 'bee' || B.k === 'drone') {
+        /* the QUEEN stays in her flower dusted in pollen, waving; the DRONE
+           has wobbled off into the sunset.  Both befriended, neither hurt. */
+        B.friend = true;
+        if (B.k === 'drone' && B.g) B.g.visible = false;
+        if (B.k === 'drone') sfxDroneWhirStop();
+      } else if (B.k === 'cuke') {
+        /* he shattered into confetti pickle slices and the crown came down —
+           embarrassed, never hurt (he is, after all, a cucumber) */
+        B.friend = true;
+        if (B.body) B.body.visible = false;
       } else {
         B.g.visible = false;
       }
@@ -257,6 +375,10 @@ function updateBoss(dt) {
 
   if (B.k === 'vac') updateVacBoss(dt);
   else if (B.k === 'rex') updateRexBoss(dt);
+  else if (B.k === 'mop') updateMopBoss(dt);
+  else if (B.k === 'bee') updateBeeBoss(dt);
+  else if (B.k === 'drone') updateDroneBoss(dt);
+  else if (B.k === 'cuke') updateCukeKing(dt);
   else updateKingBoss(dt);
 }
 
@@ -268,7 +390,7 @@ function updateVacBoss(dt) {
   switch (B.st) {
     case 0: {                                   // SUCK — pulls kibble in
       hudBossHint('she is inhaling the kibble');
-      B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.06, dt);
+      B.yaw = smooth(B.yaw, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.06, dt);
       for (let i = 0; i < KIBS.length; i++) {
         const k = KIBS[i];
         if (!k.on) continue;
@@ -294,7 +416,7 @@ function updateVacBoss(dt) {
     case 1: {                                   // TELEGRAPH — rattle + glow
       hudBossHint('get out of the lane!');
       B.shake = 1;
-      B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.14, dt);
+      B.yaw = smooth(B.yaw, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.14, dt);
       if (B.stT <= 0) {
         B.st = 2; B.stT = 1.7; B.shake = 0;
         const d = Math.hypot(CAT.x - B.x, CAT.z - B.z) || 1;
@@ -340,7 +462,7 @@ function updateVacBoss(dt) {
     }
   }
   if (B.st !== 4) { B.button.position.y = 1.10; B.button.scale.setScalar(1); }
-  B.g.position.set(B.x + (B.shake ? (Math.random() - 0.5) * 0.12 : 0), B.y, B.z);
+  twFace(B.g, B.x + (B.shake ? (Math.random() - 0.5) * 0.12 : 0), B.y, B.z, B.yaw);
   if (B.st !== 3) B.g.rotation.z = smooth(B.g.rotation.z, 0, 0.1, dt);
   /* contact hurts unless the cat is mid-pounce onto the button */
   if (B.st !== 4 && Math.hypot(CAT.x - B.x, CAT.z - B.z) < B.r + CAT_R + 0.3 &&
@@ -351,14 +473,16 @@ function updateVacBoss(dt) {
 function updateRexBoss(dt) {
   const B = BOSS;
   B.stT -= dt;
-  /* the nose is the hitbox; it follows the head's live pose */
-  const fy = B.g.rotation.y;
+  /* the nose is the hitbox; it follows the head's live pose.  B.yaw is the
+     TRACK-space facing (the mesh carries yaw + route heading) — reading the
+     mesh here would put his nose in the wrong aisle on a turning level. */
+  const fy = B.yaw;
   B.noseX = B.x + Math.sin(fy) * 1.55;
   B.noseZ = B.z + Math.cos(fy) * 1.55;
   switch (B.st) {
     case 0: {                                   // DIG
       hudBossHint('he is digging — get to the doghouse');
-      B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z) + Math.PI, 0.05, dt);
+      B.yaw = smooth(B.yaw, Math.atan2(CAT.x - B.x, CAT.z - B.z) + Math.PI, 0.05, dt);
       B.dig += dt * 9;
       if (B.head) B.head.rotation.x = 0.4 + Math.sin(B.dig) * 0.30;
       B.g.position.y = B.y + Math.abs(Math.sin(B.dig * 0.5)) * 0.06;
@@ -372,7 +496,7 @@ function updateRexBoss(dt) {
     }
     case 1: {                                   // SLAM telegraph — he rears up
       hudBossHint('JUMP the shockwave!');
-      B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.10, dt);
+      B.yaw = smooth(B.yaw, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.10, dt);
       const f = 1 - B.stT / 0.85;
       B.g.rotation.x = -f * 0.55;
       B.g.position.y = B.y + f * 0.55;
@@ -415,13 +539,14 @@ function updateRexBoss(dt) {
     }
   }
   if (B.st !== 3 && B.head) B.head.position.y = 1.74;
-  B.g.position.x = B.x; B.g.position.z = B.z;
+  twPos(B.g, B.x, B.g.position.y, B.z);
+  B.g.rotation.y = twYaw(B.z, B.yaw);
 
   /* the shockwave: a growing ring you jump over.  Grounded = wet paws. */
   if (B.ringOn) {
     B.ringR += 12.5 * dt;
     B.ring.visible = true;
-    B.ring.position.set(B.x, 0.14, B.z);
+    twPos(B.ring, B.x, 0.14, B.z);
     B.ring.scale.set(B.ringR, 1, B.ringR);
     B.ring.material.opacity = Math.max(0, 0.6 - B.ringR / 16);
     const d = Math.hypot(CAT.x - B.x, CAT.z - B.z);
@@ -437,7 +562,8 @@ function updateRexBoss(dt) {
 function updateKingBoss(dt) {
   const B = BOSS;
   B.stT -= dt;
-  B.g.rotation.y = smooth(B.g.rotation.y, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.08, dt);
+  B.yaw = smooth(B.yaw, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.08, dt);
+  B.g.rotation.y = twYaw(B.z, B.yaw);
   B.g.position.y = B.y + Math.sin(B.t * 2.2) * 0.05;
   switch (B.st) {
     case 0: {                                   // THROW — reflect it back
@@ -461,5 +587,816 @@ function updateKingBoss(dt) {
     }
   }
   /* the King's own tower deck is out of the cat's reach: nothing to touch */
+}
+
+/* ══════════════════ 4. SIR MOPSALOT (romp 4) ═══════════════════════════
+   LEVELS2 §B.  A janitor robot with a spinning mop.  The loop teaches
+   itself: he mops a slick strip, winds the mop up with a long telegraph,
+   over-spins, SLIPS ON HIS OWN PUDDLE, and lies there dizzy with his belly
+   up — POUNCE.  Three pounces.  The puddles are SLIPPERY, NEVER DAMAGING
+   (design law: the hazards teach, they don't punish), and he is never hurt:
+   he ends the fight sat down with a WET FLOOR cone on his head, waving. */
+const MOP_SPIN_R = 2.35;
+
+function mMopBody() {
+  return vcMesh([
+    vcCyl(0.86, 0.76, 1.25, 14, 0x3f7fa8).translate(0, 0.72, 0),       // bucket
+    vcCyl(0.90, 0.90, 0.14, 14, 0x2f5f80).translate(0, 1.32, 0),       // rim
+    vcCyl(0.92, 0.92, 0.12, 14, 0x2f5f80).translate(0, 0.16, 0),       // foot ring
+    vcBox(1.20, 0.34, 0.06, 0xf2e8d0).translate(0, 0.86, 0.74),        // name plate
+    vcBox(0.96, 0.18, 0.05, 0xffd24a).translate(0, 0.52, 0.76),        // hazard stripe
+    vcBox(0.96, 0.18, 0.05, 0xffd24a).translate(0, 0.28, 0.76),
+    vcCyl(0.26, 0.26, 0.20, 10, 0x2a3138).rotateZ(Math.PI / 2).translate(-0.84, 0.22, 0),
+    vcCyl(0.26, 0.26, 0.20, 10, 0x2a3138).rotateZ(Math.PI / 2).translate(0.84, 0.22, 0),
+    vcCyl(0.12, 0.12, 0.16, 8, 0x8a94a4).rotateZ(Math.PI / 2).translate(0, 0.22, -0.72),
+  ]);
+}
+function mMopHead() {
+  return vcMesh([
+    vcSph(0.52, 10, 7, 0xcfdae0).scale(1, 0.86, 0.94),                 // dome
+    vcBox(0.86, 0.22, 0.10, 0x2a3138).translate(0, 0.06, 0.44),        // visor
+    vcCyl(0.13, 0.13, 0.06, 10, 0x9fe8ff).rotateX(Math.PI / 2).translate(-0.22, 0.07, 0.49),
+    vcCyl(0.13, 0.13, 0.06, 10, 0x9fe8ff).rotateX(Math.PI / 2).translate(0.22, 0.07, 0.49),
+    vcBox(0.96, 0.09, 0.14, 0x3f7fa8).translate(0, 0.30, 0.30),        // squeegee brow
+    vcCyl(0.05, 0.05, 0.30, 6, 0x8a94a4).translate(0, 0.60, 0),
+    vcSph(0.09, 6, 5, 0xff6a5a).translate(0, 0.78, 0),                 // little light
+  ]);
+}
+function mMopArm() {
+  return vcMesh([
+    vcCyl(0.10, 0.10, 0.80, 8, 0x8a94a4).rotateZ(Math.PI / 2).translate(0.40, 0, 0),
+    vcSph(0.16, 7, 5, 0x3f7fa8).translate(0.82, 0, 0),
+  ]);
+}
+/* the mop itself: pole + a shaggy string head, in its own spin pivot */
+function mMopTool() {
+  const p = [vcCyl(0.075, 0.075, 2.20, 8, 0xc89a5a).rotateZ(Math.PI / 2).translate(1.10, 0, 0)];
+  for (let i = 0; i < 10; i++) {
+    const a = i / 10 * TAU;
+    p.push(vcBox(0.56, 0.10, 0.10, i % 2 ? 0xf2ead4 : 0xd8cdb0)
+      .rotateX(a).translate(2.36, Math.cos(a) * 0.17, Math.sin(a) * 0.17));
+  }
+  p.push(vcCyl(0.20, 0.16, 0.24, 9, 0x9ba4ac).rotateZ(Math.PI / 2).translate(2.06, 0, 0));
+  return vcMesh(p);
+}
+
+function spawnMopsalot(z) {
+  const P = WORLD.pal || PAL_BASE;
+  const g = new THREE.Group();
+  g.rotation.order = 'YXZ';
+  const body = mMopBody();
+  const headG = new THREE.Group();
+  headG.position.set(0, 1.42, 0);
+  headG.add(mMopHead());
+  const armL = mMopArm();
+  armL.position.set(-0.80, 0.96, 0.10);
+  armL.rotation.z = 0.35;
+  armL.rotation.y = Math.PI;
+  const armR = mMopArm();
+  armR.position.set(0.80, 0.96, 0.10);
+  armR.rotation.z = 0.20;
+  /* the spin pivot: the mop sweeps around him, so it gets its own group */
+  const mopG = new THREE.Group();
+  mopG.position.set(0, 0.86, 0.10);
+  const mop = mMopTool();
+  mop.rotation.z = -0.22;
+  mopG.add(mop);
+  const cone = buildCone(P);
+  cone.position.set(0, 3.4, 0);
+  cone.visible = false;
+  g.add(body, headG, armL, armR, mopG, cone);
+  twFace(g, 0, 0, z + 8, 0);
+  if (LOOK && FX.shadow) { body.castShadow = true; mop.castShadow = true; }
+  scene.add(g);
+  const B = {
+    k: 'mop', name: 'SIR MOPSALOT', x: 0, y: 0, z: z + 8, x0: 0, z0: z + 8, yaw: 0,
+    hp: 3, alive: true, engaged: false, st: 0, stT: 2.0, t: 0,
+    g, body, headG, armL, armR, mopG, mop, cone,
+    ring: makeRing(0x9fd6e8), crown: null,
+    r: 1.5, h: 2.3, gateZ: z - 15, vx: 0, vz: 0,
+    spin: 0, spinV: 0, tilt: 0, bob: 0, wave: 0, friend: false,
+    puddles: [], pIdx: 0, wx: 0, wy: 0, wz: z + 8,
+    winT: 0, hitFlash: 0, shake: 0,
+  };
+  /* three recycled puddle strips: a slick record + one flat quad each */
+  for (let i = 0; i < 3; i++) {
+    const s = addSlick(0, 0, 0, 0, 1, false);
+    s.on = false;
+    const m = makePuddle(1, 1, 0x9fd6e8);
+    m.visible = false;
+    B.puddles.push({ s, m });
+  }
+  return B;
+}
+/* he mops a strip ACROSS the arena in front of himself.  Slippery, never
+   damaging — and it is also the banana peel he will trip over. */
+function mopPuddle() {
+  const B = BOSS;
+  const p = B.puddles[B.pIdx % B.puddles.length];
+  B.pIdx++;
+  const hw = Math.max(3.0, corrHW(B.z) - 2.2);
+  const zc = B.z - 3.2 - Math.random() * 2.0;
+  const w = hw * 2, d = 3.0;
+  p.s.x0 = -hw; p.s.x1 = hw; p.s.z0 = zc - d / 2; p.s.z1 = zc + d / 2;
+  p.s.k = 1; p.s.on = true;
+  p.m.geometry.dispose();
+  p.m.geometry = new THREE.PlaneGeometry(w, d);
+  twPos(p.m, 0, 0.026, zc);
+  p.m.rotation.y = twYaw(zc, 0);
+  p.m.visible = true;
+  sfxMopSqueak(1.0);
+  for (let i = 0; i < 12; i++)
+    spark(-hw + Math.random() * w, 0.2, zc + (Math.random() - 0.5) * d,
+      0, 1.4 + Math.random(), 0, 0.5, 0.16, 0.02, 0.75, 0.92, 1.0, 3);
+}
+function mopReset() {
+  const B = BOSS;
+  if (!B || B.k !== 'mop') return;
+  B.spin = 0; B.spinV = 0; B.tilt = 0;
+  for (const p of B.puddles) { p.s.on = false; p.m.visible = false; }
+}
+function mopPose() {
+  const B = BOSS;
+  twPos(B.g, B.x, B.y + B.bob, B.z);
+  B.g.rotation.y = twYaw(B.z, B.yaw);
+  B.g.rotation.x = -B.tilt;                     // tilts onto his back
+  B.mopG.rotation.y = B.spin;
+  B.headG.rotation.x = B.tilt * 0.3;
+  B.cone.position.y = 3.4;
+}
+function updateMopBoss(dt) {
+  const B = BOSS;
+  B.stT -= dt;
+  const toCat = Math.atan2(CAT.x - B.x, CAT.z - B.z);
+  switch (B.st) {
+    case 0: {                                   // MOPPING — lays the slick
+      hudBossHint('he is mopping — that strip is slippery');
+      B.yaw = smooth(B.yaw, toCat, 0.05, dt);
+      B.spin = Math.sin(B.t * 3.4) * 0.55;      // lazy back-and-forth swab
+      B.bob = Math.abs(Math.sin(B.t * 3.4)) * 0.05;
+      B.tilt = smooth(B.tilt, 0, 0.12, dt);
+      if (B.stT <= 0) { B.st = 1; B.stT = 1.30; mopPuddle(); sfxMopWind(); }
+      break;
+    }
+    case 1: {                                   // TELEGRAPH — the wind-up
+      hudBossHint('THE MOP IS SPINNING UP — get clear!');
+      B.shake = 1;
+      B.yaw = smooth(B.yaw, toCat, 0.12, dt);
+      B.spinV = lerp(2.0, 16.0, 1 - Math.max(0, B.stT) / 1.30);
+      B.spin += B.spinV * dt;
+      if ((simTicks % 26) === 0) sfxMopSqueak(1.25 + (1 - B.stT) * 0.4);
+      if (B.stT <= 0) {
+        B.st = 2; B.stT = 1.80; B.shake = 0;
+        const d = Math.hypot(CAT.x - B.x, CAT.z - B.z) || 1;
+        B.vx = (CAT.x - B.x) / d * 6.4; B.vz = (CAT.z - B.z) / d * 6.4;
+        sfxMopSpin();
+      }
+      break;
+    }
+    case 2: {                                   // THE SPIN CHARGE
+      hudBossHint('');
+      B.spin += 18 * dt;
+      B.x += B.vx * dt; B.z += B.vz * dt;
+      const hw = corrHW(B.z) - 2.0;
+      if ((simTicks % 14) === 0) sfxMopSwish();
+      /* he slips on his OWN puddle — or on the wall, or on his own momentum */
+      const wet = WORLD.slick.length ? slickAt(B.x, B.z) : 0;
+      if (wet || Math.abs(B.x) > hw || B.z < B.gateZ + 4 || B.z > B.z0 + 12 || B.stT <= 0) {
+        B.st = 3; B.stT = 0.62;
+        B.x = clamp(B.x, -hw, hw);
+        sfxMopSlip();
+        for (let i = 0; i < 18; i++) {
+          const a = Math.random() * TAU;
+          spark(B.x, 0.3, B.z, Math.cos(a) * 5, 2 + Math.random() * 3, Math.sin(a) * 5,
+            0.7, 0.22, 0.02, 0.8, 0.94, 1.0, 5);
+        }
+      }
+      break;
+    }
+    case 3: {                                   // THE SLIP — legs up
+      hudBossHint('he slipped on his own puddle!');
+      B.tilt = smooth(B.tilt, 1.35, 0.22, dt);
+      B.spin += 9 * dt;
+      B.x += B.vx * dt * 0.5; B.z += B.vz * dt * 0.5;
+      B.vx *= Math.pow(0.08, dt); B.vz *= Math.pow(0.08, dt);
+      if (B.stT <= 0) { B.st = 4; B.stT = 3.20; sfxMopSqueak(0.7); }
+      break;
+    }
+    case 4: {                                   // DOWN + DIZZY — POUNCE HIM
+      hudBossHint('POUNCE him while he is down!');
+      B.tilt = smooth(B.tilt, 1.45, 0.14, dt);
+      B.spin = smooth(B.spin, 0, 0.08, dt);
+      B.bob = Math.sin(B.t * 5) * 0.03;
+      if ((simTicks % 15) === 0) dizzyStars(B.x, B.y + 1.6, B.z, 1);
+      if (B.stT <= 0) { B.st = 0; B.stT = 2.0; }
+      break;
+    }
+    case 5: {                                   // RECOVER after a hit
+      hudBossHint('he is wringing the mop out');
+      B.tilt = smooth(B.tilt, 0, 0.10, dt);
+      B.spin = Math.sin(B.t * 6) * 0.9;
+      if (B.stT <= 0) { B.st = 0; B.stT = 1.6; }
+      break;
+    }
+  }
+  if (B.st !== 4 && B.st !== 3) B.bob = Math.abs(Math.sin(B.t * 3.0)) * 0.04;
+  mopPose();
+  if (B.shake) B.g.position.x += (Math.random() - 0.5) * 0.10;
+  /* the sweeping mop is the only thing that can touch the cat, and only
+     while it is actually spinning — the puddles never hurt */
+  if (B.st === 2 || B.st === 1) {
+    const d = Math.hypot(CAT.x - B.x, CAT.z - B.z);
+    const reach = B.st === 2 ? MOP_SPIN_R : B.r + CAT_R + 0.2;
+    if (d < reach && CAT.y < B.y + 1.7) hurtCat(B.x, B.z, 8.0);
+  }
+}
+/* the exit: sat down, cone on the head, waving (never hurt — house law) */
+function mopWin(dt) {
+  const B = BOSS;
+  B.tilt = smooth(B.tilt, 0.30, 0.06, dt);
+  B.spin = smooth(B.spin, 0.9, 0.05, dt);
+  B.wy = smooth(B.wy, -0.34, 0.05, dt);          // he sits down on the floor
+  twPos(B.g, B.x, B.wy, B.z);
+  B.g.rotation.y = twYaw(B.z, B.yaw);
+  B.g.rotation.x = -B.tilt;
+  B.mopG.rotation.y = B.spin;
+  /* the cone lands on his dome, then he waves the free arm */
+  B.cone.visible = true;
+  B.cone.position.y = Math.max(1.86, 3.4 - (3.6 - B.winT) * 2.6);
+  B.wave += dt * 7;
+  B.armL.rotation.z = 0.35 + Math.sin(B.wave) * 0.85;
+  B.headG.rotation.z = Math.sin(B.wave * 0.5) * 0.10;
+  if ((simTicks % 22) === 0) dizzyStars(B.x, B.y + 2.2, B.z, 1);
+  if ((simTicks % 64) === 0) sfxMopSqueak(0.8);
+  for (const p of B.puddles) { p.s.on = false; p.m.visible = false; }
+}
+
+/* ══════════════════ 5. QUEEN BEE (romp 5) ══════════════════════════════
+   LEVELS2 §B.  She hovers over the flower bed and lobs HONEY BLOBS in slow,
+   sticky arcs — the L3 tail-whip REFLECT, three times, with physics a
+   six-year-old can read (gravity 9 instead of 15, so the blob hangs).
+   Between hits a wave of three drone bees sweeps the bed.  She is out of
+   melee reach on purpose: her own honey is the only thing that reaches her.
+   Never hurt — she plops into a flower, comes up dusted in pollen, and gifts
+   a honey jar (a pure kibble burst).                                     */
+const BEE_LOB_SPD = 5.6;
+
+function mBeeQBody() {
+  return vcMesh([
+    vcSph(0.62, 11, 8, 0xf2c23c).scale(1.0, 0.92, 1.35),
+    vcCyl(0.635, 0.635, 0.24, 12, 0x3a2f1a).rotateX(Math.PI / 2).translate(0, 0, 0.12),
+    vcCyl(0.585, 0.585, 0.24, 12, 0x3a2f1a).rotateX(Math.PI / 2).translate(0, 0, -0.36),
+    vcSph(0.42, 10, 7, 0x4a3a20).translate(0, 0.10, 0.72),
+    vcSph(0.115, 6, 5, 0x18120a).translate(-0.21, 0.18, 0.99),
+    vcSph(0.115, 6, 5, 0x18120a).translate(0.21, 0.18, 0.99),
+    vcSph(0.055, 5, 4, 0xfff4e0).translate(-0.24, 0.23, 1.05),
+    vcSph(0.055, 5, 4, 0xfff4e0).translate(0.24, 0.23, 1.05),
+    vcCyl(0.03, 0.03, 0.44, 4, 0x2a2016).rotateZ(0.55).translate(-0.19, 0.56, 0.82),
+    vcCyl(0.03, 0.03, 0.44, 4, 0x2a2016).rotateZ(-0.55).translate(0.19, 0.56, 0.82),
+    vcSph(0.065, 5, 4, 0x2a2016).translate(-0.31, 0.77, 0.86),
+    vcSph(0.065, 5, 4, 0x2a2016).translate(0.31, 0.77, 0.86),
+    vcCone(0.17, 0.44, 6, 0x3a2f1a).rotateX(-Math.PI / 2).translate(0, 0, -0.95),
+    vcBox(0.10, 0.34, 0.10, 0x2a2016).translate(-0.34, -0.50, 0.24),
+    vcBox(0.10, 0.34, 0.10, 0x2a2016).translate(0.34, -0.50, 0.24),
+    vcBox(0.10, 0.28, 0.10, 0x2a2016).translate(-0.30, -0.50, -0.22),
+    vcBox(0.10, 0.28, 0.10, 0x2a2016).translate(0.30, -0.50, -0.22),
+  ]);
+}
+function mBeeWing() {
+  return vcMesh([
+    vcSph(0.30, 8, 6, 0xe8f6ff).scale(2.5, 0.09, 1.0).translate(0.72, 0, 0),
+    vcSph(0.22, 7, 5, 0xd4ecff).scale(2.0, 0.08, 0.8).translate(0.54, 0, -0.46),
+  ]);
+}
+function mBeeCrown() {
+  return vcMesh([
+    vcCyl(0.30, 0.34, 0.20, 9, 0xffd24a, true),
+    vcCone(0.075, 0.18, 4, 0xffe27a).translate(-0.22, 0.17, 0),
+    vcCone(0.075, 0.18, 4, 0xffe27a).translate(0.22, 0.17, 0),
+    vcCone(0.075, 0.22, 4, 0xffe27a).translate(0, 0.20, 0),
+    vcSph(0.065, 5, 4, 0xf2648f).translate(0, 0.33, 0),
+  ]);
+}
+
+function spawnQueenBee(z) {
+  const g = new THREE.Group();
+  g.rotation.order = 'YXZ';
+  const body = mBeeQBody();
+  body.scale.setScalar(1.35);
+  const crown = mBeeCrown();
+  crown.scale.setScalar(1.35);
+  crown.position.set(0, 1.22, 0.86);          // ON her head, not sunk into it
+  const wL = mBeeWing();
+  wL.position.set(-0.10, 0.74, -0.10); wL.rotation.y = Math.PI; wL.rotation.z = 0.35;
+  const wR = mBeeWing();
+  wR.position.set(0.10, 0.74, -0.10); wR.rotation.z = 0.35;
+  g.add(body, crown, wL, wR);
+  const Y = 3.4;
+  twFace(g, 0, Y, z + 6, 0);
+  if (LOOK && FX.shadow) body.castShadow = true;
+  scene.add(g);
+  return {
+    k: 'bee', name: 'QUEEN BEE', x: 0, y: Y, z: z + 6, x0: 0, z0: z + 6, y0: Y, yaw: 0,
+    hp: 3, alive: true, engaged: false, st: 0, stT: 1.9, t: 0,
+    g, body, crownMesh: crown, wL, wR, ring: makeRing(0xffd24a), crown: null,
+    r: 1.4, h: 1.6, gateZ: z - 15, vx: 0, vz: 0, lobs: 0,
+    winT: 0, hitFlash: 0, friend: false, pollen: 0, shake: 0,
+  };
+}
+function updateBeeBoss(dt) {
+  const B = BOSS;
+  B.stT -= dt;
+  B.yaw = smooth(B.yaw, Math.atan2(CAT.x - B.x, CAT.z - B.z), 0.07, dt);
+  /* the hover: she tracks the cat slowly across the bed and bobs */
+  B.x = smooth(B.x, clamp(CAT.x, -3.6, 3.6), 0.014, dt);
+  B.z = smooth(B.z, B.z0, 0.012, dt);
+  const bob = Math.sin(B.t * 2.4) * 0.17;
+  twPos(B.g, B.x, B.y + bob, B.z);
+  B.g.rotation.y = twYaw(B.z, B.yaw);
+  const flap = Math.sin(B.t * 44) * 0.70;
+  B.wL.rotation.z = 0.35 + flap; B.wR.rotation.z = 0.35 - flap;
+  if ((simTicks % 46) === 0) sfxBeeWing();
+  switch (B.st) {
+    case 0: {                                   // LOB — reflect it back
+      hudBossHint('tail-whip her honey right back at her');
+      if (B.stT <= 0) {
+        B.stT = 1.95;
+        B.lobs++;
+        const d = Math.hypot(CAT.x - B.x, CAT.z - B.z) || 1;
+        const p = fireProj('honey', B.x, B.y - 0.72, B.z,
+          (CAT.x - B.x) / d * BEE_LOB_SPD, 2.2, (CAT.z - B.z) / d * BEE_LOB_SPD, B);
+        if (p) p.src = B;
+        sfxHoneyLob();
+        B.body.rotation.x = 0.26;
+      } else B.body.rotation.x = smooth(B.body.rotation.x, 0, 0.10, dt);
+      break;
+    }
+    case 2: {                                   // DRONE WAVE — the breather
+      hudBossHint('drone bees! keep moving');
+      if (B.stT <= 0) { B.st = 0; B.stT = 1.1; }
+      break;
+    }
+  }
+  /* out of reach at 3.4 m: nothing to scratch, nothing to pounce */
+}
+function beeWin(dt) {
+  const B = BOSS;
+  const f = 1 - B.winT / 3.8;
+  /* she plops into a flower, then comes up POLLEN-DUSTED and waves */
+  const dip = f < 0.42 ? f / 0.42 : 1 - (f - 0.42) / 0.58;
+  twPos(B.g, B.x, B.y - dip * 2.4, B.z);
+  B.g.rotation.y = twYaw(B.z, B.yaw + f * 2.6);
+  B.g.rotation.z = Math.sin(B.t * 3.0) * 0.12;
+  const flap = Math.sin(B.t * 24) * 0.45;
+  B.wL.rotation.z = 0.35 + flap; B.wR.rotation.z = 0.35 - flap;
+  if ((simTicks % 6) === 0)
+    spark(B.x + (Math.random() - 0.5) * 2.4, B.y - dip * 2.4 + 0.3 + Math.random() * 1.2,
+      B.z + (Math.random() - 0.5) * 2.4, 0, 1.2, 0, 1.0, 0.24, 0.02, 1.0, 0.88, 0.40, -0.6);
+  if (!B.pollen && f > 0.52) {
+    B.pollen = 1;
+    kibblePop(B.x, B.y - 0.4, B.z - 2.4, 18);
+    banner('HONEY JAR!', 'help yourself');
+    sfxJingle();
+  }
+  if ((simTicks % 30) === 0) sfxBeeWing();
+}
+
+/* ══════════════════ 6. DELIVERY DRONE 9000 (romp 6) ════════════════════
+   LEVELS2 §B.  A quad-rotor package drone over the rooftop arena.  It drops
+   boxes (which burst into packing peanuts), swoops low to STEAL KIBBLE, then
+   has to land on its pad for three seconds to recharge — POUNCE it.  Three
+   pounces; it sputters, parachutes its last (treat-filled) package and
+   wobbles off into the sunset.  Never hurt.                              */
+function mDroneCore() {
+  return vcMesh([
+    vcBox(1.50, 0.44, 1.50, 0x3f4450),
+    vcBox(1.62, 0.12, 1.62, 0x2a3138).translate(0, 0.26, 0),
+    vcBox(1.10, 0.10, 1.10, 0x8a94a4).translate(0, 0.34, 0),
+    vcBox(0.52, 0.30, 0.34, 0xe0553f).translate(0, 0.06, 0.80),
+    vcCyl(0.15, 0.15, 0.10, 10, 0x9fe8ff).rotateX(Math.PI / 2).translate(0, 0.06, 0.98),
+    vcBox(1.20, 0.14, 0.06, 0xffd24a).translate(0, -0.14, 0.78),
+    vcBox(0.60, 0.16, 0.05, 0xf2f0e2).translate(0, 0.14, 0.77),
+  ]);
+}
+function mDroneArms() {
+  const p = [];
+  for (const c of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const ang = Math.atan2(c[0], c[1]);
+    p.push(vcBox(1.90, 0.14, 0.18, 0x5f6474).rotateY(ang).translate(c[0] * 0.68, 0.02, c[1] * 0.68));
+    p.push(vcCyl(0.58, 0.58, 0.09, 12, 0x2a3138, true).translate(c[0] * 1.35, 0.30, c[1] * 1.35));
+    p.push(vcCyl(0.13, 0.13, 0.34, 8, 0x8a94a4).translate(c[0] * 1.35, 0.20, c[1] * 1.35));
+    p.push(vcBox(0.16, 0.30, 0.16, 0x3f4450).translate(c[0] * 1.30, -0.28, c[1] * 1.30));
+  }
+  p.push(vcBox(2.90, 0.10, 0.12, 0x2a3138).translate(0, -0.44, 0.44));
+  p.push(vcBox(2.90, 0.10, 0.12, 0x2a3138).translate(0, -0.44, -0.44));
+  return vcMesh(p);
+}
+function mDroneRotor() {
+  return vcMesh([
+    vcBox(1.12, 0.045, 0.17, 0xdde2e8),
+    vcBox(0.17, 0.045, 1.12, 0xdde2e8),
+    vcCyl(0.11, 0.11, 0.10, 8, 0x8a94a4),
+  ]);
+}
+function mDronePkg() {
+  return vcMesh([
+    vcBox(0.92, 0.80, 0.92, 0xc79a5c).translate(0, -0.64, 0),
+    vcBox(0.14, 0.82, 0.94, 0xe8dcc0).translate(0, -0.64, 0),
+    vcBox(0.94, 0.82, 0.14, 0xe8dcc0).translate(0, -0.64, 0),
+    vcBox(0.46, 0.20, 0.30, 0xe0553f).translate(0, -0.34, 0.48),
+    vcCyl(0.05, 0.05, 0.28, 5, 0x8a94a4).translate(0, -0.14, 0),
+  ]);
+}
+
+function spawnDrone9000(z) {
+  const g = new THREE.Group();
+  g.rotation.order = 'YXZ';
+  const core = mDroneCore();
+  const arms = mDroneArms();
+  const pkg = mDronePkg();
+  g.add(core, arms, pkg);
+  const rotors = [];
+  for (const c of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const r = mDroneRotor();
+    r.position.set(c[0] * 1.35, 0.34, c[1] * 1.35);
+    g.add(r);
+    rotors.push(r);
+  }
+  const hoverY = 5.0, padY = 0.62, padZ = z + 9;
+  twFace(g, 0, hoverY, padZ, 0);
+  if (LOOK && FX.shadow) { core.castShadow = true; arms.castShadow = true; }
+  scene.add(g);
+  return {
+    k: 'drone', name: 'DELIVERY DRONE 9000', x: 0, y: hoverY, z: padZ,
+    x0: 0, z0: padZ, y0: hoverY, yaw: 0,
+    hp: 3, alive: true, engaged: false, st: 0, stT: 2.4, t: 0,
+    g, core, arms, pkg, rotors, ring: makeRing(0x9fe8ff), crown: null,
+    r: 1.7, h: 1.2, gateZ: z - 15, vx: 0, vz: 0,
+    hoverY, padY, padX: 0, padZ, spin: 40, dropT: 0.8, drops: 0, stolen: 0,
+    winT: 0, hitFlash: 0, shake: 0, friend: false, chuted: 0,
+  };
+}
+function updateDroneBoss(dt) {
+  const B = BOSS;
+  B.stT -= dt;
+  for (let i = 0; i < B.rotors.length; i++) B.rotors[i].rotation.y += B.spin * dt;
+  const toCat = Math.atan2(CAT.x - B.x, CAT.z - B.z);
+  switch (B.st) {
+    case 0: {                                   // HOVER + DROP PACKAGES
+      hudBossHint('it is dropping packages — do not stand under them');
+      B.spin = smooth(B.spin, 44, 0.08, dt);
+      B.yaw = smooth(B.yaw, toCat, 0.07, dt);
+      B.x = smooth(B.x, clamp(CAT.x, -6.4, 6.4), 0.045, dt);
+      B.z = smooth(B.z, clamp(CAT.z + 3.2, B.gateZ + 8, B.z0 + 8), 0.035, dt);
+      B.y = smooth(B.y, B.hoverY, 0.05, dt);
+      B.dropT -= dt;
+      if (B.dropT <= 0) {
+        B.dropT = 1.30;
+        B.drops++;
+        const p = fireProj('box', B.x, B.y - 1.15, B.z, 0, -1.2, 0, B);
+        if (p) { p.src = B; sfxBoxDrop(); }
+      }
+      if (B.stT <= 0) { B.st = 1; B.stT = 1.05; sfxDroneRev(); }
+      break;
+    }
+    case 1: {                                   // TELEGRAPH the swoop
+      hudBossHint('IT IS LINING UP A SWOOP — move!');
+      B.spin = smooth(B.spin, 76, 0.14, dt);
+      B.shake = 1;
+      B.yaw = smooth(B.yaw, toCat, 0.16, dt);
+      if (B.stT <= 0) {
+        B.st = 2; B.stT = 1.55; B.shake = 0;
+        const d = Math.hypot(CAT.x - B.x, CAT.z - B.z) || 1;
+        B.vx = (CAT.x - B.x) / d * 9.5; B.vz = (CAT.z - B.z) / d * 9.5;
+        sfxDroneSwoop();
+      }
+      break;
+    }
+    case 2: {                                   // SWOOP — and STEAL KIBBLE
+      hudBossHint('');
+      B.y = smooth(B.y, 1.45, 0.11, dt);
+      B.x += B.vx * dt; B.z += B.vz * dt;
+      for (let i = 0; i < KIBS.length; i++) {
+        const k = KIBS[i];
+        if (!k.on || Math.abs(k.z - B.z) > 8) continue;
+        const d = Math.hypot(k.x - B.x, k.z - B.z) || 1;
+        if (d < 5.5) {
+          k.x -= (k.x - B.x) / d * 6.0 * dt; k.z -= (k.z - B.z) / d * 6.0 * dt;
+          if (d < 1.4) { k.on = false; B.stolen++; }
+        }
+      }
+      const hw = corrHW(B.z) - 1.6;
+      if (Math.abs(B.x) > hw || B.z < B.gateZ + 5 || B.z > B.z0 + 10 || B.stT <= 0) {
+        B.st = 3; B.stT = 2.4;
+      }
+      break;
+    }
+    case 3: {                                   // RETURN TO THE PAD and land
+      hudBossHint('it is going back to its pad to recharge');
+      B.spin = smooth(B.spin, 22, 0.05, dt);
+      B.x = smooth(B.x, B.padX, 0.075, dt);
+      B.z = smooth(B.z, B.padZ, 0.075, dt);
+      B.y = smooth(B.y, B.padY + 0.5, 0.06, dt);
+      if (B.stT <= 0) { B.st = 4; B.stT = 3.0; sfxDroneLand(); }
+      break;
+    }
+    case 4: {                                   // RECHARGING — POUNCE IT
+      hudBossHint('POUNCE IT while it recharges!');
+      B.spin = smooth(B.spin, 4, 0.06, dt);
+      B.x = smooth(B.x, B.padX, 0.20, dt);
+      B.z = smooth(B.z, B.padZ, 0.20, dt);
+      B.y = smooth(B.y, B.padY, 0.14, dt);
+      if ((simTicks % 17) === 0)
+        spark(B.x + (Math.random() - 0.5) * 1.8, B.y + 0.6, B.z + (Math.random() - 0.5) * 1.8,
+          0, 1.6, 0, 0.5, 0.18, 0.02, 0.62, 0.92, 1.0, -0.8);
+      if (B.stT <= 0) { B.st = 0; B.stT = 2.6; B.dropT = 0.7; sfxDroneRev(); }
+      break;
+    }
+    case 5: {                                   // RECOVER after a pounce
+      hudBossHint('it is rebooting');
+      B.spin = smooth(B.spin, 40, 0.07, dt);
+      B.y = smooth(B.y, B.hoverY, 0.05, dt);
+      if (B.stT <= 0) { B.st = 0; B.stT = 2.4; B.dropT = 0.9; }
+      break;
+    }
+  }
+  twFace(B.g, B.x + (B.shake ? (Math.random() - 0.5) * 0.10 : 0), B.y, B.z, B.yaw);
+  B.g.rotation.x = B.st === 2 ? -0.28 : B.st === 1 ? 0.20 : Math.sin(B.t * 1.6) * 0.04;
+  B.g.rotation.z = B.st === 2 ? Math.sin(B.t * 9) * 0.10 : 0;
+  if (B.pkg) B.pkg.visible = true;
+  /* ONLY the swoop can touch the cat.  On the pad it is inert — that is the
+     whole window — and a landed box is just a pile of packing peanuts. */
+  if (B.st === 2 && Math.hypot(CAT.x - B.x, CAT.z - B.z) < B.r + CAT_R + 0.4 &&
+      CAT.y < B.y + 1.3) hurtCat(B.x, B.z, 8.5);
+}
+function droneWin(dt) {
+  const B = BOSS;
+  const f = 1 - B.winT / 3.8;
+  B.spin = smooth(B.spin, 10, 0.03, dt);
+  for (let i = 0; i < B.rotors.length; i++) B.rotors[i].rotation.y += B.spin * dt;
+  if (!B.chuted && f > 0.22) {
+    B.chuted = 1;
+    /* it PARACHUTES its last package down, and the package is full of treats */
+    if (B.pkg) B.pkg.visible = false;
+    kibblePop(B.x, Math.max(1.4, B.y - 1.0), B.z - 1.2, 18);
+    addPick('fish', B.x, 0.55, B.z - 2.6);
+    peanutBurst(B.x, Math.max(1.0, B.y - 1.1), B.z, 14);
+    banner('A PACKAGE FOR YOU!', 'it is full of treats');
+    sfxChime(1.2);
+  }
+  /* …and wobbles off into the sunset */
+  B.x += 2.4 * dt; B.y += 2.8 * dt; B.z += 4.4 * dt;
+  twPos(B.g, B.x, B.y, B.z);
+  B.g.rotation.y = twYaw(B.z, B.yaw + f * 3.4);
+  B.g.rotation.z = Math.sin(B.t * 7) * 0.30;
+  B.g.rotation.x = Math.sin(B.t * 5) * 0.16;
+  if ((simTicks % 26) === 0) sfxDroneSputter();
+}
+
+/* ══════════════════ 7. THE CUCUMBER KING (romp 7) ══════════════════════
+   LEVELS2 §B, and the one boss in the game with a LAW attached: he cannot be
+   damaged by scratch, whip, roll, or reflected anything.  The fight IS the
+   cucumber-startle mechanic the game has been teaching since romp 1 — he
+   plants RANKS of minion cucumbers, the cat deliberately startles himself off
+   them to gain height, and the only hit is a POUNCE ON THE CROWN.  Three
+   crown pounces; each one re-plants a taller rank and teleports his platform
+   higher.  Final hit: confetti pickle slices, the crown drops, and the dream
+   rains treats.  He is embarrassed, never hurt.  He is a cucumber.        */
+function mCukeKingBody() {
+  const p = [
+    vcCyl(1.00, 1.10, 3.10, 12, 0x5aa832).rotateX(0.06),
+    vcSph(1.02, 12, 9, 0x6fbc3e).translate(0, 1.55, 0),
+    vcSph(1.06, 12, 9, 0x4f9a2c).translate(0, -1.50, 0),
+  ];
+  /* the pale ribs that make a green cylinder read as a CUCUMBER */
+  for (let i = 0; i < 9; i++) {
+    const a = i / 9 * TAU;
+    p.push(vcBox(0.16, 3.00, 0.10, 0x8ed05a)
+      .translate(Math.sin(a) * 1.02, 0.05, Math.cos(a) * 1.02));
+  }
+  /* the face: two enormous unimpressed eyes and a smug little mouth */
+  p.push(vcSph(0.30, 8, 6, 0xfff4e0).scale(1, 1.2, 0.5).translate(-0.42, 1.55, 0.86));
+  p.push(vcSph(0.30, 8, 6, 0xfff4e0).scale(1, 1.2, 0.5).translate(0.42, 1.55, 0.86));
+  p.push(vcSph(0.14, 6, 5, 0x1a2410).translate(-0.42, 1.52, 1.02));
+  p.push(vcSph(0.14, 6, 5, 0x1a2410).translate(0.42, 1.52, 1.02));
+  p.push(vcBox(0.62, 0.12, 0.10, 0x3a5a20).translate(0, 1.05, 0.98));
+  p.push(vcBox(0.40, 0.10, 0.09, 0x3a5a20).rotateZ(0.5).translate(-0.58, 1.96, 0.94));
+  p.push(vcBox(0.40, 0.10, 0.09, 0x3a5a20).rotateZ(-0.5).translate(0.58, 1.96, 0.94));
+  /* two stubby leafy arms, folded */
+  p.push(vcBox(0.30, 0.90, 0.26, 0x4f9a2c).rotateZ(0.9).translate(-1.14, 0.30, 0.20));
+  p.push(vcBox(0.30, 0.90, 0.26, 0x4f9a2c).rotateZ(-0.9).translate(1.14, 0.30, 0.20));
+  return vcMesh(p);
+}
+function mKingCrown() {
+  const p = [
+    vcCyl(0.66, 0.74, 0.44, 10, 0xffd24a, true),
+    vcCyl(0.80, 0.80, 0.11, 10, 0xffe27a).translate(0, -0.24, 0),
+  ];
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * TAU;
+    p.push(vcCone(0.16, 0.44, 4, 0xffe27a).translate(Math.sin(a) * 0.58, 0.36, Math.cos(a) * 0.58));
+    p.push(vcSph(0.11, 5, 4, i % 2 ? 0xf2648f : 0xb07fe0).translate(Math.sin(a) * 0.58, 0.60, Math.cos(a) * 0.58));
+  }
+  p.push(vcSph(0.16, 6, 5, 0xf2648f).translate(0, 0.44, 0));
+  return vcMesh(p);
+}
+function mThroneDeck(P) {
+  const p = [
+    /* 4.6 m, not 5.6: the cat fights from an arena floor 3–7 m BELOW, so the
+       deck is seen nearly edge-on and a wide one paints a dark band across
+       the whole top of the frame with the crown hidden behind it. */
+    vcBox(4.60, 0.56, 4.60, P.throne).translate(0, -0.28, 0),
+    vcBox(4.90, 0.20, 4.90, P.throneD).translate(0, -0.60, 0),
+    /* and a SLIM plinth: the first pass hung a 2.3 m cone under it */
+    vcCyl(1.20, 0.48, 1.00, 12, P.throneD).translate(0, -1.16, 0),
+    /* the throne back, so the platform reads as a THRONE and not as a lift */
+    vcBox(3.40, 3.00, 0.34, P.throneD).translate(0, 1.50, -1.90),
+    vcBox(3.80, 0.32, 0.48, P.throne).translate(0, 3.08, -1.90),
+    vcSph(0.30, 8, 6, P.star).translate(0, 3.44, -1.90),
+    vcBox(0.40, 1.70, 0.40, P.throneD).translate(-1.85, 0.85, -1.80),
+    vcBox(0.40, 1.70, 0.40, P.throneD).translate(1.85, 0.85, -1.80),
+  ];
+  for (const sx of [-1, 1]) {
+    p.push(vcBox(0.32, 0.80, 3.20, P.throne).translate(sx * 2.10, 0.40, -0.30));
+  }
+  return vcMesh(p);
+}
+
+function spawnCukeKing(z) {
+  const P = WORLD.pal || PAL_BASE;
+  const pads = WORLD.kingPads ||
+    { a: [], b: [], c: [], platX: 0, platZ: z + 6, platY: [7.0, 9.0, 11.0] };
+  const g = new THREE.Group();
+  g.rotation.order = 'YXZ';
+  const deck = mThroneDeck(P);
+  const body = mCukeKingBody();
+  /* he is read from 5–9 m BELOW and 10 m away: at 1× he was a green sliver
+     between the throne arms, and the crown (the only target in the fight) was
+     not legible at all */
+  body.scale.setScalar(1.28);
+  /* and he stands at the FRONT of his own deck (local +z is toward the cat
+     once the group is yawed by π) — stood in the middle, the deck's leading
+     edge cut his crown off from every angle the arena camera has */
+  body.position.set(0, 1.95, 0.60);
+  const crown = mKingCrown();
+  crown.scale.setScalar(1.55);
+  crown.position.set(0, 3.70, 0.60);
+  g.add(deck, body, crown);
+  const platY = pads.platY[0];
+  twFace(g, pads.platX, platY, pads.platZ, Math.PI);   // he faces back down the route
+  if (LOOK && FX.shadow) body.castShadow = true;
+  scene.add(g);
+  /* The platform is a COLLISION-ONLY mover (`g: null`).  The deck MESH lives
+     inside the boss group, so kingPose owns the transform and updateMovers
+     owns only the box — two owners of one Object3D is how a boss ends up
+     twitching between two positions every single frame. */
+  const sol = { x0: pads.platX - 2.3, x1: pads.platX + 2.3, y0: platY - 0.56, y1: platY,
+    z0: pads.platZ - 2.3, z1: pads.platZ + 2.3, kind: 'floor', on: true,
+    cx: pads.platX, cy: platY - 0.28, cz: pads.platZ, sx: 4.6, sy: 0.56, sz: 4.6,
+    mover: true, ax: 'y', amp: 0, per: 8, bx: pads.platX, by: platY - 0.28, bz: pads.platZ,
+    g: null, g2: null, rollR: 0, vx: 0, vy: 0, vz: 0 };
+  WORLD.movers.push(sol);
+  BOSS = {
+    k: 'cuke', name: 'THE CUCUMBER KING', x: pads.platX, y: platY, z: pads.platZ,
+    x0: pads.platX, z0: pads.platZ, y0: platY, yaw: Math.PI,
+    hp: 3, alive: true, engaged: false, st: 0, stT: 2.4, t: 0,
+    g, body, deck, crownMesh: crown, ring: makeRing(0xb8e88a), crown: null,
+    r: 1.6, h: 3.4, gateZ: z - 15, vx: 0, vz: 0,
+    /* the two flags the rest of the file reads */
+    ridesMover: true, immune: true,
+    platY, plat: sol, pads, phase: 0, pool: [],
+    bob: 0, sway: 0, winT: 0, hitFlash: 0, friend: false, confetti: 0,
+  };
+  kingPlant(0);
+  return BOSS;
+}
+/* he plants a rank of minion cucumbers.  POOLED: a respawn re-plants too, and
+   pushing fresh entities every time would grow ENTS without bound. */
+function kingPlant(phase) {
+  const B = BOSS;
+  if (!B || B.k !== 'cuke') return;
+  const P = B.pads;
+  const want = [];
+  const ranks = phase >= 2 ? [P.a, P.b, P.c] : phase === 1 ? [P.a, P.b] : [P.a];
+  for (const rank of ranks) for (const p of rank) want.push(p);
+  while (B.pool.length < want.length) B.pool.push(addEnt('cuke', 0, -60, B.z, { look: 'big' }));
+  for (let i = 0; i < B.pool.length; i++) {
+    const e = B.pool[i];
+    if (i < want.length) {
+      const p = want[i];
+      e.x = e.x0 = p[0]; e.y = e.y0 = p[1]; e.z = e.z0 = p[2];
+      e.alive = true; e.dead = false; e.dizzy = 0; e.mesm = 0;
+      if (e.g) {
+        twFace(e.g, e.x, e.y, e.z, e.face);
+        e.g.rotation.z = 0;
+        e.g.visible = true;
+      }
+      for (let k = 0; k < 6; k++)
+        spark(p[0] + (Math.random() - 0.5) * 0.9, p[1] + 0.3, p[2] + (Math.random() - 0.5) * 0.9,
+          0, 2.0 + Math.random() * 1.2, 0, 0.6, 0.20, 0.02, 0.62, 0.92, 0.40, -1.0);
+    } else {
+      e.alive = false; e.dead = true;
+      if (e.g) e.g.visible = false;
+    }
+  }
+  sfxSproing(0.6);
+}
+/* the platform TELEPORTS higher between phases (LEVELS2 §B) */
+function kingLift(phase) {
+  const B = BOSS;
+  const y = B.pads.platY[Math.min(phase, B.pads.platY.length - 1)];
+  B.plat.by = y - 0.28; B.plat.cy = y - 0.28;
+  B.plat.y0 = y - 0.56; B.plat.y1 = y;
+  B.platY = y; B.y = y;
+  for (let i = 0; i < 22; i++) {
+    const a = Math.random() * TAU;
+    spark(B.x + Math.cos(a) * 2.5, y - 0.5 + Math.random() * 1.4, B.z + Math.sin(a) * 2.5,
+      Math.cos(a) * 2.2, 2.4, Math.sin(a) * 2.2, 0.85, 0.26, 0.02, 1.0, 0.94, 0.66, -0.4);
+  }
+  sfxDreamChime();
+}
+function kingPose(dt) {
+  const B = BOSS;
+  /* updateMovers ran earlier this tick, so the collision box is the authority
+     on where the deck actually is */
+  B.platY = B.plat.y1;
+  B.y = B.platY;
+  B.bob = Math.sin(B.t * 1.6) * 0.05;
+  twPos(B.g, B.x, B.platY + B.bob, B.z);
+  B.g.rotation.y = twYaw(B.z, B.yaw + B.sway * 0.35);
+  B.g.rotation.z = B.sway;
+  if (B.crownMesh && !B.confetti)
+    B.crownMesh.position.y = 3.70 + Math.sin(B.t * 2.2) * 0.08;
+  void dt;
+}
+function updateCukeKing(dt) {
+  const B = BOSS;
+  B.stT -= dt;
+  switch (B.st) {
+    case 0: {
+      hudBossHint('startle-LAUNCH off his cucumbers and POUNCE THE CROWN');
+      B.sway = smooth(B.sway, Math.sin(B.t * 1.5) * 0.06, 0.12, dt);
+      if (B.stT <= 0) { B.st = 1; B.stT = 2.4; }
+      break;
+    }
+    case 1: {
+      /* he is smug and does nothing dangerous at all: the FIGHT is the climb,
+         and a boss who also shot at you would make it unfair rather than hard */
+      hudBossHint('he does not think you can get up there');
+      B.sway = smooth(B.sway, Math.sin(B.t * 2.6) * 0.11, 0.12, dt);
+      if ((simTicks % 110) === 0) sfxKingScoff();
+      if (B.stT <= 0) { B.st = 0; B.stT = 2.8; }
+      break;
+    }
+    case 5: {
+      hudBossHint('he is planting a whole new rank of cucumbers!');
+      B.sway = smooth(B.sway, Math.sin(B.t * 8) * 0.17, 0.2, dt);
+      if (B.stT <= 0) { B.st = 0; B.stT = 2.2; }
+      break;
+    }
+  }
+  kingPose(dt);
+  /* THE CROWN — the only thing in this fight that can be hit.  Rex's
+     precedent (any airborne contact with the nose counts) is the right shape,
+     with one addition: it must be a POUNCE, so it is a deliberate act and not
+     an accident of arriving.  `hitFlash` is the natural one-hit-per-phase
+     guard, because bossHit sets it. */
+  if (CAT.pouncing && !CAT.grounded && B.hitFlash <= 0 && B.winT <= 0 &&
+      Math.abs(CAT.x - B.x) < 2.9 && Math.abs(CAT.z - B.z) < 2.9 &&
+      CAT.y > B.platY - 1.2 && CAT.y < B.platY + 4.6) {
+    CAT.pouncing = false;
+    CAT.vy = 9.0;
+    cat.squash = 1.2;
+    sfxSproing(1.1);
+    bossHit('pounce');
+  }
+}
+function kingWin(dt) {
+  const B = BOSS;
+  const f = 1 - B.winT / 3.8;
+  B.sway = Math.sin(B.t * 15) * 0.26 * (1 - f);
+  kingPose(dt);
+  if (!B.confetti) {
+    B.confetti = 1;
+    /* CONFETTI PICKLE SLICES.  Same pooled bits as the packing peanuts, in
+       pickle green — the whole VFX layer is still four draw calls. */
+    peanutBurst(B.x, B.platY + 2.2, B.z, 34, 0.50, 0.76, 0.29);
+    peanutBurst(B.x, B.platY + 1.4, B.z, 20, 0.62, 0.86, 0.36);
+    if (B.body) B.body.visible = false;
+    for (const e of B.pool) { e.alive = false; e.dead = true; if (e.g) e.g.visible = false; }
+    sfxPickleConfetti();
+  }
+  /* the crown drops onto the deck… */
+  if (B.crownMesh) {
+    B.crownMesh.position.y = Math.max(0.34, 3.70 - f * 6.2);
+    B.crownMesh.rotation.y += dt * 5.0;
+  }
+  /* …and THE DREAM RAINS TREATS over the whole throne room */
+  if ((simTicks % 9) === 0) {
+    kibblePop(B.x + (Math.random() - 0.5) * 11, B.platY + 3.6, B.z + (Math.random() - 0.5) * 15, 1);
+    spark(B.x + (Math.random() - 0.5) * 14, B.platY + 5.0, B.z + (Math.random() - 0.5) * 18,
+      0, -1.8, 0, 1.6, 0.26, 0.02, 1.0, 0.92, 0.60, 1.2);
+  }
+  if ((simTicks % 36) === 0) sfxDreamChime();
 }
 </script>

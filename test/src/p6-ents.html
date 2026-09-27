@@ -22,6 +22,22 @@ function dizzyStars(x, y, z, n) {
       0.75, 0.30, 0.02, 1.0, 0.92, 0.45, 4);
   }
 }
+/* a burst of packing peanuts — DELIVERY DRONE 9000's boxes, and the confetti
+   pickle slices THE CUCUMBER KING shatters into (same pooled bits, different
+   colours: the whole VFX layer stays at four draw calls) */
+function peanutBurst(x, y, z, n, cr, cg, cb) {
+  const N = n || 16;
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * TAU, sp = 2.2 + Math.random() * 3.4;
+    bit(x, y, z, Math.cos(a) * sp, 3.4 + Math.random() * 3.6, Math.sin(a) * sp,
+      1.1 + Math.random() * 0.5, 0.15 + Math.random() * 0.07,
+      cr == null ? 0.98 : cr, cg == null ? 0.95 : cg, cb == null ? 0.86 : cb, 15);
+  }
+  for (let i = 0; i < 6; i++)
+    spark(x, y + 0.2, z, (Math.random() - 0.5) * 3, Math.random() * 2.4, (Math.random() - 0.5) * 3,
+      0.42, 0.22, 0.02, 1.0, 0.96, 0.84, 6);
+  sfxPeanuts();
+}
 function kibblePop(x, y, z, n) {
   for (let i = 0; i < n; i++) {
     const a = Math.random() * TAU, sp = 1.4 + Math.random() * 2.2;
@@ -56,7 +72,8 @@ function drawKibble(catZ) {
     if (!k.on) continue;
     const dz = k.z - catZ;
     if (dz < -14 || dz > 74) continue;
-    _pv.set(k.x, k.y + Math.sin(k.t) * 0.055, k.z);
+    if (TW.on) { twMap(k.z, k.x, k.y + Math.sin(k.t) * 0.055, _tw); _pv.set(_tw[0], _tw[1], _tw[2]); }
+    else _pv.set(k.x, k.y + Math.sin(k.t) * 0.055, k.z);
     _kq.setFromAxisAngle(_ky, k.t * 1.6);
     _sc.set(1, 1, 1);
     _m4.compose(_pv, _kq, _sc);
@@ -101,7 +118,7 @@ function addPick(kind, x, y, z) {
   if (kind === 'fish') m = buildFish();
   else if (kind === 'milk') m = buildSaucer();
   else m = buildMouse();
-  m.position.set(x, y, z);
+  twPos(m, x, y, z);
   scene.add(m);
   PICKS.push({ k: kind, x, y, z, y0: y, on: true, t: Math.random() * TAU, g: m });
 }
@@ -125,7 +142,7 @@ function buildCheckpoint(x, y, z) {
   ]);
   bowl.position.set(0, 0, 0.45);
   g.add(a, b, bar, bowl);
-  g.position.set(x, y, z);
+  twFace(g, x, y, z, 0);
   scene.add(g);
   return g;
 }
@@ -270,6 +287,114 @@ function mVent() {
     vcBox(0.04, 0.26, 0.52, 0xb8c0cc).translate(0.60, 0.30, 0),
   ]);
 }
+/* ── romp 4's market set ─────────────────────────────────────────────── */
+/* a tin can knocked off a shelf: rolls DOWN the aisle at the cat, bonkable */
+function mCan() {
+  return vcMesh([
+    vcCyl(0.20, 0.20, 0.46, 10, 0xc9d2d6).rotateZ(Math.PI / 2),
+    vcCyl(0.205, 0.205, 0.22, 10, 0xe0553f).rotateZ(Math.PI / 2),
+    vcCyl(0.175, 0.175, 0.02, 10, 0xf2f6f8).rotateZ(Math.PI / 2).translate(0.235, 0, 0),
+    vcCyl(0.175, 0.175, 0.02, 10, 0xf2f6f8).rotateZ(Math.PI / 2).translate(-0.235, 0, 0),
+    vcBox(0.10, 0.12, 0.12, 0xfff0c0).translate(0, 0.14, 0.14),
+  ]);
+}
+/* the produce-aisle melon on patrol: a big friendly striped bowling ball */
+function mMelon() {
+  /* Stripes are thin DISCS a hair wider than the skin, not slabs: a slab
+     big enough to show at the equator swallows the whole melon at the
+     poles (it read as a green folder in the first shot pass), and one that
+     exactly matches the skin z-fights along the graze line. */
+  const p = [vcSph(0.42, 10, 8, 0x4f9a3a).scale(1, 0.92, 1.06)];
+  for (let i = 0; i < 3; i++)
+    p.push(vcCyl(0.432, 0.432, 0.10, 12, 0x9ad06a).rotateX(Math.PI / 2).rotateY(i * 1.05));
+  p.push(vcCyl(0.035, 0.05, 0.12, 5, 0x6f8f4a).translate(0, 0.40, 0));
+  return vcMesh(p);
+}
+/* ── THE BIG OUTSIDE, part two: the L5–L7 reskins ────────────────────────
+   LEVELS2 §B asks for "bees that swoop (crow logic reskinned)" and "watering-
+   can arcs (sprinkler logic reskinned)".  So these are MESHES, not new AI:
+   the entity keeps its kind (and therefore its exact tested behaviour) and
+   `addEnt(..., {look})` swaps what it looks like.  One code path, four
+   creatures — and nothing in updateEnts or contactCheck had to change. */
+function mBee() {
+  return vcMesh([
+    vcSph(0.24, 9, 7, 0xf2c23c).scale(1.0, 0.92, 1.30),                 // fuzzy body
+    vcCyl(0.245, 0.245, 0.09, 10, 0x3a2f1a).rotateX(Math.PI / 2).translate(0, 0, 0.02),
+    vcCyl(0.225, 0.225, 0.09, 10, 0x3a2f1a).rotateX(Math.PI / 2).translate(0, 0, -0.18),
+    vcSph(0.16, 8, 6, 0x4a3a20).translate(0, 0.05, 0.28),                // head
+    vcSph(0.045, 5, 4, 0x18120a).translate(-0.08, 0.09, 0.40),
+    vcSph(0.045, 5, 4, 0x18120a).translate(0.08, 0.09, 0.40),
+    vcCyl(0.012, 0.012, 0.18, 4, 0x2a2016).rotateZ(0.5).translate(-0.07, 0.22, 0.32),
+    vcCyl(0.012, 0.012, 0.18, 4, 0x2a2016).rotateZ(-0.5).translate(0.07, 0.22, 0.32),
+    vcBox(0.42, 0.025, 0.26, 0xdff0ff).translate(-0.28, 0.16, -0.02),    // wings
+    vcBox(0.42, 0.025, 0.26, 0xdff0ff).translate(0.28, 0.16, -0.02),
+    vcCone(0.07, 0.16, 5, 0x3a2f1a).rotateX(-Math.PI / 2).translate(0, 0, -0.34),
+  ]);
+}
+/* a watering can tipped on a stand: same rotating-arc hazard as a sprinkler */
+function mWateringCan() {
+  return vcMesh([
+    vcCyl(0.18, 0.22, 0.12, 9, 0x4a5a3c).translate(0, 0.06, 0),
+    vcCyl(0.07, 0.08, 0.42, 7, 0x6f8a52).translate(0, 0.30, 0),
+    vcCyl(0.24, 0.27, 0.36, 10, 0xcfd8dc).translate(0, 0.66, 0),          // the can
+    vcCyl(0.26, 0.26, 0.05, 10, 0x9ba4ac).translate(0, 0.85, 0),
+    vcCyl(0.05, 0.05, 0.46, 6, 0xcfd8dc).rotateZ(-0.9).translate(0.26, 0.76, 0),
+    vcCone(0.11, 0.16, 7, 0x9ba4ac).rotateZ(-Math.PI / 2).rotateY(Math.PI).translate(0.48, 0.66, 0),
+    vcCyl(0.03, 0.03, 0.26, 5, 0x9ba4ac).rotateX(Math.PI / 2).translate(-0.22, 0.78, 0),
+  ]);
+}
+/* the dream's sprinkler rains STARS instead of water */
+function mStarSprinkler() {
+  const p = [
+    vcCyl(0.22, 0.26, 0.12, 10, 0xc8b0ea).translate(0, 0.06, 0),
+    vcCyl(0.08, 0.09, 0.44, 7, 0xe8d4ff).translate(0, 0.32, 0),
+    vcSph(0.17, 9, 7, 0xfff0b0).translate(0, 0.60, 0),
+  ];
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * TAU;
+    p.push(vcCone(0.07, 0.24, 4, 0xffe27a).rotateZ(Math.PI / 2).rotateY(a).translate(
+      Math.sin(a) * 0.26, 0.60, Math.cos(a) * 0.26));
+  }
+  return vcMesh(p);
+}
+/* a GHOST-WHITE vacuum: the dream's remix of the very first enemy in the game */
+function mVacGhost(scale) {
+  const s = scale || 1;
+  return vcMesh([
+    vcCyl(0.46 * s, 0.50 * s, 0.26 * s, 12, 0xf2eefc).translate(0, 0.13 * s, 0),
+    vcCyl(0.42 * s, 0.44 * s, 0.05 * s, 12, 0xe0d8f4).translate(0, 0.28 * s, 0),
+    vcCyl(0.16 * s, 0.16 * s, 0.07 * s, 8, 0xcfc2ea).translate(0, 0.31 * s, 0),
+    vcBox(0.34 * s, 0.05 * s, 0.05 * s, 0xd8cff0).translate(0, 0.29 * s, 0.34 * s),
+    vcCyl(0.09 * s, 0.09 * s, 0.05 * s, 8, 0xb8e8ff).rotateX(Math.PI / 2).translate(0, 0.20 * s, 0.50 * s),
+    vcBox(0.18 * s, 0.12 * s, 0.03 * s, 0xa89fd0).translate(0, 0.14 * s, 0.50 * s),
+    vcSph(0.10 * s, 6, 5, 0xfffaff).translate(-0.16 * s, 0.30 * s, 0.30 * s),
+    vcSph(0.10 * s, 6, 5, 0xfffaff).translate(0.16 * s, 0.30 * s, 0.30 * s),
+  ]);
+}
+function mButterfly() {
+  return vcMesh([
+    vcCyl(0.035, 0.035, 0.30, 5, 0x3a2f2a).rotateX(Math.PI / 2),
+    vcSph(0.055, 6, 5, 0x3a2f2a).translate(0, 0.02, 0.16),
+    vcBox(0.30, 0.02, 0.26, 0xf2a8d0).translate(-0.17, 0.03, 0.06),
+    vcBox(0.30, 0.02, 0.26, 0xf2a8d0).translate(0.17, 0.03, 0.06),
+    vcBox(0.22, 0.02, 0.20, 0xffd86a).translate(-0.14, 0.02, -0.12),
+    vcBox(0.22, 0.02, 0.20, 0xffd86a).translate(0.14, 0.02, -0.12),
+    vcCyl(0.010, 0.010, 0.14, 4, 0x3a2f2a).rotateZ(0.6).translate(-0.05, 0.09, 0.22),
+    vcCyl(0.010, 0.010, 0.14, 4, 0x3a2f2a).rotateZ(-0.6).translate(0.05, 0.09, 0.22),
+  ]);
+}
+/* fish that swim through the AIR — the dream's school (LEVELS2 §B) */
+function mAirFish() {
+  return vcMesh([
+    vcSph(0.26, 9, 7, 0x8fd8f4).scale(1.30, 0.86, 0.60),
+    vcCone(0.20, 0.28, 4, 0x6fc0e8).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).translate(0, 0, -0.36),
+    vcBox(0.16, 0.22, 0.03, 0xbfeaff).translate(0, 0.20, -0.02),
+    vcBox(0.03, 0.14, 0.20, 0xbfeaff).translate(0.20, -0.06, 0.02),
+    vcBox(0.03, 0.14, 0.20, 0xbfeaff).translate(-0.20, -0.06, 0.02),
+    vcSph(0.055, 5, 4, 0x1a2430).translate(0.12, 0.08, 0.20),
+    vcSph(0.055, 5, 4, 0x1a2430).translate(-0.12, 0.08, 0.20),
+  ]);
+}
 function mZap() {
   return vcMesh([
     vcBox(0.24, 1.10, 0.24, 0x3f4450).translate(0, 0.55, 0),
@@ -281,11 +406,27 @@ function mZap() {
 /* ══════════════════════ projectiles (pooled) ═══════════════════════ */
 const PROJ = [];
 function buildProjPool() {
-  const specs = [['water', 10], ['toast', 8], ['trash', 7]];
+  /* THE BIG OUTSIDE: `honey` is the QUEEN BEE's lob (slow, stickier arc,
+     REFLECTABLE — it is the L3 skill with new physics) and `box` is DELIVERY
+     DRONE 9000's package (heavy, bursts into packing peanuts). */
+  const specs = [['water', 10], ['toast', 8], ['trash', 7], ['honey', 6], ['box', 5]];
   for (const [k, n] of specs) {
     for (let i = 0; i < n; i++) {
       let m;
-      if (k === 'water') {
+      if (k === 'honey') {
+        m = vcMesh([
+          vcSph(0.26, 9, 7, 0xf2a83c).scale(1, 1.22, 1),
+          vcSph(0.10, 6, 5, 0xffe08a).translate(0.08, 0.14, 0.08),
+          vcCone(0.13, 0.22, 6, 0xd88a2a).translate(0, -0.26, 0),
+        ]);
+      } else if (k === 'box') {
+        m = vcMesh([
+          vcBox(0.52, 0.46, 0.52, 0xc79a5c),
+          vcBox(0.10, 0.47, 0.53, 0xe8dcc0),
+          vcBox(0.53, 0.47, 0.10, 0xe8dcc0),
+          vcBox(0.30, 0.12, 0.22, 0xe0553f).translate(0, 0.19, 0.27),
+        ]);
+      } else if (k === 'water') {
         m = vcMesh([
           vcSph(0.16, 7, 5, 0x9fdcff).scale(1, 1.25, 1),
           vcSph(0.07, 5, 4, 0xe8f8ff).translate(0.05, 0.08, 0.05),
@@ -340,23 +481,46 @@ function addEnt(k, x, y, z, o) {
     rng: o.rng || 3.0, per: o.per || 2.0, ph: o.ph || 0, amp: o.amp || 0,
     g: null, g2: null, flash: 0, tip: 0, spinT: 0, dizzy: 0, fired: 0,
     boss: false, hp: o.hp || 1, sit: 0, launch: o.launch || 0, lane: o.lane || 0,
+    /* a RESKIN, never a new AI (LEVELS2 §B): `look` picks the mesh and the
+       kind keeps its already-verified behaviour */
+    look: o.look || '',
   };
-  if (k === 'vac') { e.g = mVac(1); e.r = 0.52; e.h = 0.42; }
+  if (k === 'vac') { e.g = o.look === 'ghost' ? mVacGhost(1) : mVac(1); e.r = 0.52; e.h = 0.42; }
   else if (k === 'spray') { e.g = mSpray(); e.r = 0.30; e.h = 0.58; }
   else if (k === 'toast') { e.g = mToaster(); e.r = 0.40; e.h = 0.48; }
   else if (k === 'yarn') { e.g = mYarn(); e.r = 0.32; e.h = 0.6; }
-  else if (k === 'cuke') { e.g = mCucumber(); e.r = 0.44; e.h = 0.3; e.hurt = false; e.bonk = false; }
-  else if (k === 'sprk') { e.g = mSprinkler(); e.r = 0.28; e.h = 0.5; e.hurt = false; e.bonk = false; }
+  else if (k === 'cuke') {
+    e.g = mCucumber(); e.r = 0.44; e.h = 0.3; e.hurt = false; e.bonk = false;
+    /* THE CUCUMBER KING's minions are LAUNCH PADS 12 m below a crown — at the
+       house-cat size they read as green pills you cannot find.  The trigger
+       radius grows with the art so the hitbox never lies. */
+    if (o.look === 'big') { e.g.scale.setScalar(1.5); e.r = 0.64; e.h = 0.42; }
+  }
+  else if (k === 'sprk') {
+    e.g = o.look === 'can' ? mWateringCan() : o.look === 'star' ? mStarSprinkler() : mSprinkler();
+    e.r = 0.28; e.h = 0.5; e.hurt = false; e.bonk = false;
+  }
   else if (k === 'dog') { e.g = mDogBody(false); e.g2 = mDogHead(false); e.g2.position.set(0, 0.52, 0.34); e.g.add(e.g2); e.r = 0.44; e.h = 0.75; }
-  else if (k === 'crow') { e.g = mCrow(); e.r = 0.34; e.h = 0.4; }
+  else if (k === 'crow') { e.g = o.look === 'bee' ? mBee() : mCrow(); e.r = 0.34; e.h = 0.4; }
+  /* `flit` — butterflies and air-swimming fish.  Pure joy: they lead the
+     kibble trails and can never hurt or be hurt (design §4 charm budget). */
+  else if (k === 'flit') {
+    e.g = o.look === 'fish' ? mAirFish() : mButterfly();
+    /* scaled up on purpose: at 1× they read as litter on the floor rather
+       than as creatures in the air (first shot pass, romp 7) */
+    e.g.scale.setScalar(o.look === 'fish' ? 1.7 : 2.0);
+    e.r = 0.30; e.h = 0.40; e.hurt = false; e.bonk = false;
+    e.rng = o.rng || 2.2;
+  }
   else if (k === 'gnome') { e.g = mGnome(); e.r = 0.30; e.h = 0.9; e.hurt = false; }
   else if (k === 'pigeon') { e.g = mPigeon(); e.r = 0.22; e.h = 0.3; e.hurt = false; e.bonk = false; }
   else if (k === 'coon') { e.g = mCoon(); e.r = 0.42; e.h = 0.95; }
   else if (k === 'vent') { e.g = mVent(); e.r = 0.5; e.h = 0.55; e.hurt = false; e.bonk = false; }
   else if (k === 'zap') { e.g = mZap(); e.r = 0.7; e.h = 1.2; e.bonk = false; }
+  else if (k === 'can') { e.g = mCan(); e.r = 0.24; e.h = 0.42; e.lane = o.lane != null ? o.lane : z; }
+  else if (k === 'melon') { e.g = mMelon(); e.r = 0.44; e.h = 0.8; }
   if (e.g) {
-    e.g.position.set(x, y, z);
-    e.g.rotation.y = e.face;
+    twFace(e.g, x, y, z, e.face);
     if (LOOK && FX.shadow && k !== 'pigeon' && k !== 'vent' && k !== 'zap') e.g.castShadow = true;
     scene.add(e.g);
   }
@@ -372,7 +536,10 @@ function addEnt(k, x, y, z, o) {
     const parts = [];
     for (let i = 0; i < 7; i++) {
       const d = 0.6 + i * 0.52;
-      parts.push(vcBox(0.16, 0.16, 0.34, 0xa8e4ff).translate(0, 0.42 + Math.sin(i / 7 * Math.PI) * 0.9 - i * 0.05, d));
+      /* romp 7's dream sprinkler rains STARS, so the arc takes a warm tint —
+         romps 1–3 pass no `look` and keep the exact pale-blue water arc */
+      parts.push(vcBox(0.16, 0.16, 0.34, e.look === 'star' ? 0xfff0b0 : 0xa8e4ff)
+        .translate(0, 0.42 + Math.sin(i / 7 * Math.PI) * 0.9 - i * 0.05, d));
     }
     const arc = vcMesh(parts, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.72, depthWrite: false }));
     arc.position.set(0, 0, 0);
@@ -435,7 +602,7 @@ function updateEnts(dt) {
       e.x += (tx - e.x) / d * sp * dt;
       e.z += (tz - e.z) / d * sp * dt;
       e.face = Math.atan2(tx - e.x, tz - e.z);
-      if (e.g) { e.g.position.set(e.x, e.y, e.z); e.g.rotation.y = e.face; }
+      if (e.g) twFace(e.g, e.x, e.y, e.z, e.face);
       if (e.k === 'dog' && e.g2) e.g2.rotation.x = Math.sin(e.t * 16) * 0.12;
       continue;
     }
@@ -464,8 +631,7 @@ function updateEnts(dt) {
           if (e.stT <= 0) { e.st = 0; e.x0 = e.x; }
         }
         if (e.g) {
-          e.g.position.set(e.x + (e.shake ? (Math.random() - 0.5) * 0.06 : 0), e.y, e.z);
-          e.g.rotation.y = e.face;
+          twFace(e.g, e.x + (e.shake ? (Math.random() - 0.5) * 0.06 : 0), e.y, e.z, e.face);
           e.g.rotation.z = e.st === 2 ? Math.sin(e.t * 40) * 0.05 : 0;
         }
         break;
@@ -483,7 +649,7 @@ function updateEnts(dt) {
             sfxSpray();
           }
         }
-        if (e.g) { e.g.rotation.y = e.face; e.g.position.y = e.y + Math.sin(e.t * 3) * 0.012; }
+        if (e.g) { e.g.rotation.y = twYaw(e.z, e.face); e.g.position.y = e.y + Math.sin(e.t * 3) * 0.012; }
         break;
       }
       case 'toast': {
@@ -508,7 +674,7 @@ function updateEnts(dt) {
           e.vz = smooth(e.vz, (cz - e.z) / d * 3.4, 0.05, dt);
           e.x += e.vx * dt; e.z += e.vz * dt;
           if (e.g) {
-            e.g.position.set(e.x, e.y, e.z);
+            twPos(e.g, e.x, e.y, e.z);
             e.g.rotation.x += e.vz * dt / 0.30;
             e.g.rotation.z -= e.vx * dt / 0.30;
           }
@@ -521,18 +687,60 @@ function updateEnts(dt) {
       }
       case 'sprk': {
         e.face += dt * (e.per > 0 ? TAU / e.per : 1.4);
-        if (e.g) e.g.rotation.y = e.face;
+        if (e.g) e.g.rotation.y = twYaw(e.z, e.face);
+        break;
+      }
+      /* — the market set — */
+      case 'can': {
+        /* knocked off a shelf and rolling down the aisle at the cat; when it
+           has rolled past him it goes back up the aisle and does it again */
+        if (dz < 26) {
+          e.z -= 5.2 * dt;
+          e.x += Math.sin(e.t * 1.7) * 0.5 * dt;
+          if (e.z < cz - 9 || e.z < e.lane - 34) { e.z = e.lane; e.x = e.x0; }
+          if (e.g) {
+            twPos(e.g, e.x, e.y, e.z);
+            e.g.rotation.x -= 5.2 * dt / 0.20;
+            e.g.rotation.y = twYaw(e.z, Math.PI / 2);
+          }
+        }
+        break;
+      }
+      /* — the L5/L7 charm layer: butterflies and air-swimming fish — */
+      case 'flit': {
+        /* a little lissajous around the spawn, so the kibble trail it leads
+           reads as a path something actually FLEW.  No hazard, no bonk. */
+        const ph = e.ph;
+        e.x = e.x0 + Math.sin(e.t * 0.9 + ph) * e.rng;
+        e.y = e.y0 + Math.sin(e.t * 1.7 + ph * 1.3) * 0.42;
+        e.z = e.z0 + Math.cos(e.t * 0.7 + ph) * 1.7;
+        if (e.g) {
+          twFace(e.g, e.x, e.y, e.z,
+            Math.atan2(Math.cos(e.t * 0.9 + ph) * e.rng, -Math.sin(e.t * 0.7 + ph) * 1.7));
+          e.g.rotation.z = Math.sin(e.t * (e.look === 'fish' ? 7 : 17)) * (e.look === 'fish' ? 0.18 : 0.55);
+        }
+        break;
+      }
+      case 'melon': {
+        /* patrols its lane, slow and heavy, and turns at the ends */
+        e.x = e.x0 + Math.sin(e.t * 1.1 / Math.max(0.5, e.rng)) * e.rng;
+        const vx = Math.cos(e.t * 1.1 / Math.max(0.5, e.rng)) * e.rng;
+        if (e.g) {
+          twPos(e.g, e.x, e.y + 0.42, e.z);
+          e.g.rotation.z -= vx * dt * 2.4;
+          e.g.rotation.y = twYaw(e.z, 0);
+        }
         break;
       }
       case 'dog': {
         if (e.st === 0) {
           /* idle bark + a little hop */
           if (Math.abs(dz) < 11 && dz > -4) { e.st = 1; e.stT = 0.45; sfxBark(1); }
-          if (e.g) { e.g.position.y = e.y + Math.abs(Math.sin(e.t * 3)) * 0.03; e.g.rotation.y = smooth(e.g.rotation.y, Math.atan2(cx - e.x, cz - e.z), 0.08, dt); }
+          if (e.g) { e.g.position.y = e.y + Math.abs(Math.sin(e.t * 3)) * 0.03; e.g.rotation.y = smooth(e.g.rotation.y, twYaw(e.z, Math.atan2(cx - e.x, cz - e.z)), 0.08, dt); }
         } else if (e.st === 1) {
           e.stT -= dt;
           e.face = Math.atan2(cx - e.x, cz - e.z);
-          if (e.g) { e.g.rotation.y = e.face; e.g.position.y = e.y - 0.05; }
+          if (e.g) { e.g.rotation.y = twYaw(e.z, e.face); e.g.position.y = e.y - 0.05; }
           if (e.stT <= 0) { e.st = 2; e.stT = 1.25; sfxBark(1.15); }
         } else if (e.st === 2) {
           e.stT -= dt;
@@ -541,8 +749,7 @@ function updateEnts(dt) {
           e.z += (cz - e.z) / d * 6.2 * dt;
           e.face = Math.atan2(cx - e.x, cz - e.z);
           if (e.g) {
-            e.g.position.set(e.x, e.y + Math.abs(Math.sin(e.t * 22)) * 0.09, e.z);
-            e.g.rotation.y = e.face;
+            twFace(e.g, e.x, e.y + Math.abs(Math.sin(e.t * 22)) * 0.09, e.z, e.face);
             if (e.g2) e.g2.rotation.x = Math.sin(e.t * 22) * 0.16;
           }
           if (e.stT <= 0) { e.st = 3; e.stT = 1.0; }
@@ -577,8 +784,7 @@ function updateEnts(dt) {
           if (e.stT <= 0) { e.st = 0; e.x = e.x0; e.z = e.z0; e.y = e.y0; }
         }
         if (e.g) {
-          e.g.position.set(e.x, e.y, e.z);
-          e.g.rotation.y = Math.atan2(e.vx, e.vz) || e.face;
+          twFace(e.g, e.x, e.y, e.z, Math.atan2(e.vx, e.vz) || e.face);
           const flap = Math.sin(e.t * (e.st === 2 ? 26 : 9)) * (e.st === 0 ? 0.12 : 0.55);
           e.g.rotation.z = flap;
         }
@@ -603,7 +809,7 @@ function updateEnts(dt) {
           e.z += Math.sin(e.ph * 7.3) * 2.6 * dt + 2.2 * dt;
           if (e.stT <= 0) { e.dead = true; if (e.g) e.g.visible = false; }
         }
-        if (e.g) { e.g.position.set(e.x, e.y, e.z); e.g.rotation.z = Math.sin(e.t * (e.st ? 30 : 6)) * (e.st ? 0.6 : 0.08); }
+        if (e.g) { twPos(e.g, e.x, e.y, e.z); e.g.rotation.z = Math.sin(e.t * (e.st ? 30 : 6)) * (e.st ? 0.6 : 0.08); }
         break;
       }
       case 'coon': {
@@ -617,7 +823,7 @@ function updateEnts(dt) {
           e.flash = 0.3;
         }
         if (e.g) {
-          e.g.rotation.y = e.face;
+          e.g.rotation.y = twYaw(e.z, e.face);
           e.g.position.y = e.y + Math.abs(Math.sin(e.t * 2.4)) * 0.03;
           e.g.rotation.x = e.flash > 0 ? -0.22 : 0;
         }
@@ -662,15 +868,25 @@ function updateProj(dt) {
     const p = PROJ[i];
     if (!p.on) continue;
     p.t += dt;
-    p.vy -= (p.k === 'water' ? 13 : p.k === 'toast' ? 17 : 15) * dt;
+    /* per-kind gravity.  `honey` is DELIBERATELY light (9): the design asks
+       for "slow arcs … stickier physics", and a lazy high arc is what makes a
+       three-hit tail-whip reflect fight readable for a six-year-old.  `box`
+       is heavy (21) so a dropped package lands where its shadow says. */
+    p.vy -= (p.k === 'water' ? 13 : p.k === 'toast' ? 17 : p.k === 'honey' ? 9
+      : p.k === 'box' ? 21 : 15) * dt;
     p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-    p.spin += dt * (p.k === 'toast' ? 7 : 3);
-    p.g.position.set(p.x, p.y, p.z);
+    p.spin += dt * (p.k === 'toast' ? 7 : p.k === 'honey' ? 1.2 : p.k === 'box' ? 2.2 : 3);
+    twPos(p.g, p.x, p.y, p.z);
     p.g.rotation.set(p.spin * 0.7, p.spin, p.spin * 0.4);
     if (p.y < groundAt(p.x, p.z) - 0.4 || p.t > 6 || p.z < CAT.z - 26 || p.z > CAT.z + 70) {
       if (p.y < groundAt(p.x, p.z) + 0.2 && p.t < 6) {
         if (p.k === 'water') sfxSplat(0.5);
         else if (p.k === 'trash') sfxSplat(0.8);
+        else if (p.k === 'honey') sfxHoneySplat();
+        /* a dropped package BURSTS INTO PACKING PEANUTS (LEVELS2 §B) — the
+           whole joke of the drone, and it is why the boxes read as harmless
+           once they have landed */
+        else if (p.k === 'box') peanutBurst(p.x, p.y + 0.2, p.z);
         for (let s = 0; s < 4; s++)
           spark(p.x, p.y + 0.1, p.z, (Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2,
             0.32, 0.18, 0.02, p.k === 'water' ? 0.6 : 0.5, p.k === 'water' ? 0.85 : 0.42, p.k === 'water' ? 1.0 : 0.30, 8);
@@ -683,8 +899,15 @@ function updateProj(dt) {
       for (let j = 0; j < ENTS.length; j++) {
         const e = ENTS[j];
         if (!e.alive || !e.bonk) continue;
-        if (Math.abs(e.z - p.z) < e.r + 0.5 && Math.abs(e.x - p.x) < e.r + 0.5 &&
-            p.y > e.y - 0.3 && p.y < e.y + e.h + 0.7) {
+        /* A reflected projectile is THE ranged answer (design §2) and it is
+           on the mercy path, so its hit box is generous — the boss version
+           (bossProjHit) always used a ~3 m vertical window while this one
+           used e.h + 0.7, and the reflect arc (vy is floored at 3.2) sails
+           roughly 0.2 m OVER a raccoon's head at typical range: a perfect
+           whip visibly bonked nothing.  Traced with a per-tick projectile
+           dump, 2026-09-27.  Matching the boss window fixes it. */
+        if (Math.abs(e.z - p.z) < e.r + 0.7 && Math.abs(e.x - p.x) < e.r + 0.7 &&
+            p.y > e.y - 0.5 && p.y < e.y + e.h + 1.6) {
           killEnt(e);
           REFLECT_KILLS++;
           p.on = false; p.g.visible = false;
@@ -739,7 +962,7 @@ function updateLaser(dt, lx, lz) {
   LASER.z = clamp(LASER.z, CAT.z - 7, CAT.z + 26);
   LASER.y = groundAt(LASER.x, LASER.z) + 0.02;
   LASER.dot.visible = true;
-  LASER.dot.position.set(LASER.x, LASER.y, LASER.z);
+  twPos(LASER.dot, LASER.x, LASER.y, LASER.z);
   const pulse = 1 + Math.sin(simT * 22) * 0.12;
   LASER.dot.scale.set(pulse, 1, pulse);
 

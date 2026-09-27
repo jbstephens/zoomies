@@ -41,6 +41,32 @@ const PAL_BASE = {
   city1: 0x241f38, city2: 0x2c2442, city3: 0x1c1830,
   winA: 0xffd98a, winB: 0x9fe0ff, glowBand: 0x3a2c52,
   hill: 0x93b487, farHouse: 0xe0cfae, farRoof: 0xa8674a, farTree: 0x6f9a5f,
+  /* THE BIG OUTSIDE — the market set.  These live in PAL_BASE too, because
+     a missing palette key used to be a hard crash mid-build (§p7 header). */
+  shelfM: 0xc4cec9, shelfD: 0x97a4a0,
+  bx1: 0xe0553f, bx2: 0x3f8fd0, bx3: 0xf2c23c, bx4: 0x63b85a,
+  bx5: 0xd86aa8, bx6: 0xf5893c,
+  ice: 0xdff2fb, iceD: 0xbfe2f2, iceGlow: 0xcfeeff,
+  belt: 0x3a4048, beltD: 0x282d34,
+  cone: 0xf28a2a, coneD: 0xf2e8d0,
+  signA: 0xffd24a, signB: 0xe0553f, panel: 0xfffaea,
+  /* THE BIG OUTSIDE, part two — the greenhouse, the day skyline and the
+     dream.  Same law as above: every key a builder can read lives HERE, so a
+     theme can never be missing one and crash a level mid-build. */
+  leafBig: 0x5aa83f, leafBigD: 0x417f30,
+  terra: 0xc27a4a, terraD: 0x9e5c34,
+  glass: 0xe4f6ea, glassFrame: 0xcfd8cc,
+  bench: 0xb08a52, benchD: 0x8a6a3c,
+  soil: 0x5f4632, vine: 0x4f8f3a,
+  flower1: 0xf2648f, flower2: 0xffd24a, flower3: 0xb07fe0,
+  concA: 0xd8cdb8, concB: 0xb8ab94, glassD: 0x7fb0cf, goldTrim: 0xffc86a,
+  craneA: 0xf2b02a, craneD: 0xd88a1a,
+  dayCity1: 0xb8c4d0, dayCity2: 0xa2b0c0, dayCity3: 0xc8d2dc,
+  dayWin: 0x8fbcd8, haze: 0xd8e8f4,
+  cush1: 0xffc0e0, cush2: 0xc0b0f0, cush3: 0xfff0b8,
+  yarn1: 0xf28fb0, yarn2: 0xffd8e8,
+  star: 0xfff3b8, cloud: 0xf6e8ff,
+  throne: 0xc8b0f0, throneD: 0x9f88d0, pickle: 0x7fc24a,
 };
 
 const PAL_HOUSE = Object.assign({}, PAL_BASE, {
@@ -105,12 +131,115 @@ const PAL_NIGHT = Object.assign({}, PAL_BASE, {
   water: 0x4a7f9f, waterGlow: 0x7fc4e8, catpost: 0x5f5a70,
 });
 
+/* romp 4 — MARKET SWEEP.  Bright fluorescent cream/mint, colourful shelf
+   boxes, a frosted freezer aisle and checkout chrome. */
+const PAL_MARKET = Object.assign({}, PAL_BASE, {
+  /* the checker needs REAL contrast: at ACES + the market grade, a 0xec/0xdb
+     pair came out as one sheet of white in the first shot pass */
+  floorA: 0xdfe6dc, floorB: 0xbdcbc0, floorC: 0xeef0e6,
+  wall: 0xe8efe6, wallLow: 0xcbd9cb, trim: 0xf8fcf6,
+  shelfM: 0xbcc8c2, shelfD: 0x8e9d97, metal: 0xaab6b1, metalD: 0x818e89,
+  counter: 0xeef2ea, counterD: 0xcdd6ce,
+  crate: 0xd8b078, crateD: 0xb68d55,
+  wood: 0xb08a52, woodD: 0x8d6c3c,
+  bx1: 0xe0553f, bx2: 0x3f8fd0, bx3: 0xf2c23c, bx4: 0x63b85a,
+  bx5: 0xd86aa8, bx6: 0xf5893c,
+  ice: 0xe6f6fd, iceD: 0xc2e4f4, iceGlow: 0xd2f0ff,
+  belt: 0x3a4048, beltD: 0x282d34,
+  cone: 0xf28a2a, coneD: 0xf7eedc,
+  signA: 0xffd24a, signB: 0xe0553f, panel: 0xfffaea,
+  rope: 0xc8c0a8,
+  plantL: 0x63b85a, plantD: 0x4a8f44, pot: 0xd08a5a,
+  leaf: 0x63b85a, leafD: 0x4a8f44, stem: 0x6f9a52,
+  winLit: 0xfffdf2, winGlow: 0xfff6d8, sunPatch: 0xfffbea,
+  hill: 0xc8d6c4, farHouse: 0xeef2ea, farRoof: 0xb4bfba, farTree: 0x8fb487,
+});
+
+/* romp 5 — GREENHOUSE JUNGLE.  Lush greens, terracotta, glass glints and a
+   warm sun coming down through the roof panes. */
+const PAL_GREEN = Object.assign({}, PAL_BASE, {
+  /* the floor is DAMP BRICK.  The first pass (0xa89070) graded out to cream
+     and the whole house read as one pale sheet — this one keeps its red. */
+  floorA: 0x8f6a48, floorB: 0x78563a, floorC: 0x9e7a54,
+  wall: 0xcfe8d4, wallLow: 0xafc0ac, trim: 0xe0f4e2,
+  /* and the panes are GLASS WITH A GARDEN BEHIND THEM, not a lightbox */
+  glass: 0xbfe0c4, glassFrame: 0x9fb09c,
+  leaf: 0x4e9a3f, leafD: 0x3a7a30, stem: 0x5f9a48,
+  leafBig: 0x5aa83f, leafBigD: 0x3f8030,
+  bush: 0x3f8f34, bushD: 0x327029, bark: 0x6a4a2c,
+  plantL: 0x63b850, plantD: 0x458f38,
+  terra: 0xc87c4a, terraD: 0x9e5c34, pot: 0xc87c4a,
+  bench: 0xb89058, benchD: 0x8a6a3c, wood: 0xb08a52, woodD: 0x8a6a3c,
+  soil: 0x5f4632, dirt: 0x5f4632, vine: 0x4f9a3a,
+  flower1: 0xf2648f, flower2: 0xffd24a, flower3: 0xb07fe0,
+  metal: 0xa8b4a8, metalD: 0x7f8a7f,
+  counter: 0xe0e8d8, counterD: 0xc0cbb4,
+  crate: 0xc79a5c, crateD: 0xa07641,
+  rope: 0xc8bfa0, signA: 0xffd24a, signB: 0x63b850, panel: 0xf4fff0,
+  winLit: 0xfdfff0, winGlow: 0xf0ffd8, sunPatch: 0xf4ffd8,
+  iceGlow: 0xdcffe8,
+  hill: 0xa8c49a, farHouse: 0xe4eed8, farRoof: 0xa8764a, farTree: 0x6f9a52,
+});
+
+/* romp 6 — SKYLINE SWING.  Warm concrete, cool glass, gold afternoon light.
+   The deliberate OPPOSITE of romp 3's indigo night on the same rooftops. */
+const PAL_SKY = Object.assign({}, PAL_BASE, {
+  /* warm concrete, and warmer than the first pass: 0xcfc2a8 under a 0.84 sun
+     graded to white and the rooftops lost all their tar-and-gravel */
+  floorA: 0xb0a184, floorB: 0x968869, floorC: 0xc2b394,
+  roofA: 0xb0a184, roofB: 0x968869,
+  brick: 0xc08a6a, brickD: 0xa06e52,
+  parapet: 0xd8ccb4, parapetD: 0xb8ab94,
+  metal: 0xb8c0c8, metalD: 0x8a939c,
+  concA: 0xdcd0ba, concB: 0xbcaf98, glassD: 0x7fb4d4, goldTrim: 0xffc86a,
+  craneA: 0xf2b02a, craneD: 0xd07f18,
+  tower: 0xc8bfae, towerD: 0xa89a86, towerLeg: 0x8a8070, towerDeck: 0xb8ac98,
+  towerGlow: 0xffd88a,
+  rope: 0xd8cfb8, cloth1: 0xfffaf0, cloth2: 0x9fd4f2, cloth3: 0xffc0d8,
+  dump: 0x4f8f6a, dumpD: 0x3f7254, awn2: 0xfff6e2,
+  dayCity1: 0x9fb0c2, dayCity2: 0x8b9db2, dayCity3: 0xb2c1d0,
+  dayWin: 0x6f9fc4, haze: 0xc8dcec,
+  wall: 0xc2b498, wallLow: 0xa89a7e, trim: 0xe0d4ba,
+  wood: 0xa8784a, woodD: 0x8a5f38,
+  winLit: 0xfffaea, winGlow: 0xffe8b8, sunPatch: 0xfff0cc,
+  crate: 0xd8ac70, crateD: 0xb08850,
+  bush: 0x5f9f54, bushD: 0x4a8442, leaf: 0x63a854, leafD: 0x4f8f44,
+  stone: 0xc4bdae, stoneD: 0xa8a294, counter: 0xe0d8c4, counterD: 0xc0b8a4,
+  signA: 0xffd24a, signB: 0xe0553f, panel: 0xfffaea,
+  hill: 0xb4c4a8, farHouse: 0xe8dcc0, farRoof: 0xb8764a, farTree: 0x7fa468,
+});
+
+/* romp 7 — DREAMLAND DELUXE.  Cotton-candy pastels over a deep indigo void. */
+const PAL_DREAM = Object.assign({}, PAL_BASE, {
+  floorA: 0xffd8ee, floorB: 0xe0c8f4, floorC: 0xfff0d8,
+  cush1: 0xffc0e0, cush2: 0xc4b0f2, cush3: 0xfff0b8,
+  cushion: 0xffc0e0, couch: 0xf2a8d0, couchD: 0xd88fb8,
+  yarn1: 0xf28fb0, yarn2: 0xfff0f8,
+  star: 0xfff3b8, cloud: 0xf8ecff,
+  throne: 0xc8b0f0, throneD: 0x9f88d0, pickle: 0x7fc24a,
+  wall: 0xe8d8ff, wallLow: 0xcfbcf0, trim: 0xfff0ff,
+  metal: 0xc8c0e0, metalD: 0x9f98c0,
+  rope: 0xffd8e8, cloth1: 0xfff4ff, cloth2: 0xbfe4ff, cloth3: 0xffc0d8,
+  wood: 0xd0a8e0, woodD: 0xa888c0,
+  leaf: 0x8fd8a8, leafD: 0x6fb888, stem: 0x9fd8b0,
+  plantL: 0x9fe8b8, plantD: 0x7fc498, pot: 0xe0a8c8,
+  terra: 0xe0a8c8, terraD: 0xc088a8,
+  bush: 0x9fd8b8, bushD: 0x7fb898, bark: 0xb08fc0,
+  stone: 0xd8cff0, stoneD: 0xb8afd0, counter: 0xf4e8ff, counterD: 0xd8c8f0,
+  crate: 0xffd8a8, crateD: 0xe0b888,
+  signA: 0xfff3b8, signB: 0xf2a8d0, panel: 0xfff4ff,
+  winLit: 0xfff8ff, winGlow: 0xffe0ff, sunPatch: 0xffe8f8,
+  iceGlow: 0xe8e0ff, ice: 0xf0e8ff, iceD: 0xd8ccf4,
+  towerGlow: 0xfff3b8, lampLit: 0xfff8e0, lampGlow: 0xffe8b0, shade: 0xffd8ee,
+  hill: 0xc8b8e8, farHouse: 0xf0e0ff, farRoof: 0xd8a8c8, farTree: 0x9fd8b8,
+});
+
 /* the authoring helper — every call appends one chunk record */
 function A() {
   const C = [];
   return {
     C,
-    floor(z0, z1, y, w, xc) { C.push({ t: 'floor', z0, z1, y, w, xc: xc || 0 }); return this; },
+    floor(z0, z1, y, w, xc, pat) { C.push({ t: 'floor', z0, z1, y, w, xc: xc || 0, pat: pat || 0 }); return this; },
     corr(z0, z1, hw) { C.push({ t: 'corr', z0, z1, hw }); return this; },
     walls(z0, z1, hw, h, style) { C.push({ t: 'walls', z0, z1, hw, h, style }); return this; },
     p(k, x, z, a, b, c) { C.push({ t: 'prop', k, x, z, a, b, c }); return this; },
@@ -124,7 +253,9 @@ function A() {
     line(x0, z0, x1, z1, y, n) { C.push({ t: 'line', x0, z0, x1, z1, y, n }); return this; },
     box(x, y, z, sx, sy, sz, col, kind) { C.push({ t: 'box', x, y, z, sx, sy, sz, col, kind }); return this; },
     crate(x, y, z, s) { C.push({ t: 'crate', x, y, z, s: s || 0.62 }); return this; },
-    mover(x, y, z, sx, sy, sz, ax, amp, per, col) { C.push({ t: 'mover', x, y, z, sx, sy, sz, ax, amp, per, col }); return this; },
+    /* `look` is optional and only ever ADDS: 'yarn' gives romp 7's rolling
+       planets their own mesh.  Every existing call passes nothing. */
+    mover(x, y, z, sx, sy, sz, ax, amp, per, col, look) { C.push({ t: 'mover', x, y, z, sx, sy, sz, ax, amp, per, col, look }); return this; },
     e(k, x, y, z, o) { C.push({ t: 'enemy', k, x, y, z, o: o || {} }); return this; },
     kib(x, y, z) { C.push({ t: 'kib', x, y, z }); return this; },
     row(x, y, z, dx, dy, dz, n) { C.push({ t: 'row', x, y, z, dx, dy, dz, n }); return this; },
@@ -134,6 +265,49 @@ function A() {
     check(z, x) { C.push({ t: 'check', z, x: x || 0 }); return this; },
     boss(z, k) { C.push({ t: 'bossz', z, k }); return this; },
     end(z) { C.push({ t: 'end', z }); return this; },
+    /* ── THE BIG OUTSIDE ops (LEVELS2 §A).  These three are the whole new
+       traversal vocabulary; levels stay pure data. ────────────────────── */
+    /* an updraft column — a gentle float, not a cannon */
+    vent(x, z, r, power, y0, h, art) {
+      C.push({ t: 'vent', x, z, r: r || 1.6, power: power || 7.0,
+        y0: y0 || 0, h: h || 9.0, art: art || '' });
+      return this;
+    },
+    /* a zipline: grab within ~1.2 m mid-air, auto-slide to the LOWER end.
+       `sp` overrides the ride speed — romp 6's long avenue crossings want it. */
+    zip(x0, z0, x1, z1, y0, y1, sp) { C.push({ t: 'zip', x0, z0, x1, z1, y0, y1, sp }); return this; },
+    /* a low-friction floor patch (freezer frost, mopped tile).  NEVER hurts */
+    slick(x, z0, z1, w, k, cold) { C.push({ t: 'slick', x, z0, z1, w, k, cold }); return this; },
+    /* market furniture */
+    shelf2(x, z, len) { C.push({ t: 'shelf2', x, z, len }); return this; },
+    endcap(x, z) { C.push({ t: 'endcap', x, z }); return this; },
+    freez(x, z, len) { C.push({ t: 'freez', x, z, len }); return this; },
+    reg(x, z) { C.push({ t: 'reg', x, z }); return this; },
+    conv(x, z, len, w) { C.push({ t: 'conv', x, z, len, w }); return this; },
+    cart(x, z, ry) { C.push({ t: 'cart', x, z, ry: ry || 0 }); return this; },
+    sign(x, y, z, w, h, hex) { C.push({ t: 'sign', x, y, z, w, h, hex }); return this; },
+    cone(x, z, ry) { C.push({ t: 'cone', x, z, ry: ry || 0 }); return this; },
+    doors(x, z) { C.push({ t: 'doors', x, z }); return this; },
+    /* the PA gag: a one-shot line when the cat passes this z */
+    pa(z, main, sub) { C.push({ t: 'pa', z, main, sub }); return this; },
+    /* ── romp 5 — GREENHOUSE furniture ── */
+    leaf(x, y, z, r) { C.push({ t: 'leaf', x, y, z, r: r || 1.5 }); return this; },
+    pots(x, z, n) { C.push({ t: 'pots', x, z, n: n || 3 }); return this; },
+    stage(x, z, len, w, y) { C.push({ t: 'stage', x, z, len, w, y }); return this; },
+    fern(x, z, s) { C.push({ t: 'fern', x, z, s: s || 1.0 }); return this; },
+    palm(x, z, h) { C.push({ t: 'palm', x, z, h: h || 5.0 }); return this; },
+    ivy(x, y, z, h) { C.push({ t: 'ivy', x, y, z, h: h || 3.0 }); return this; },
+    bed(x, z, len, w) { C.push({ t: 'bed', x, z, len, w: w || 3.0 }); return this; },
+    canopy(x, y, z, s) { C.push({ t: 'canopy', x, y, z, s: s || 3.0 }); return this; },
+    /* ── romp 6 — SKYLINE furniture ── */
+    tower(x, z, w, d, h) { C.push({ t: 'tower', x, z, w, d, h }); return this; },
+    crane(x, z, h) { C.push({ t: 'crane', x, z, h: h || 12 }); return this; },
+    washer(x, y, z, w) { C.push({ t: 'washer', x, y, z, w: w || 3.0 }); return this; },
+    kite(x, y, z, hex) { C.push({ t: 'kite', x, y, z, hex }); return this; },
+    /* ── romp 7 — DREAM furniture ── */
+    isle(x, z, w, d, y) { C.push({ t: 'isle', x, z, w, d, y }); return this; },
+    cloud(x, y, z, s) { C.push({ t: 'cloud', x, y, z, s: s || 3.0 }); return this; },
+    column(x, z, h) { C.push({ t: 'column', x, z, h: h || 6.0 }); return this; },
   };
 }
 
@@ -583,7 +757,803 @@ function lvlNight() {
     chunks: a.C };
 }
 
-const LEVELS = [lvlHouse(), lvlYard(), lvlNight()];
+/* ══════════════════ ROMP 4 — MARKET SWEEP ══════════════════════════
+   THE BIG OUTSIDE opens here, and this level IS the tutorial for turns:
+   entrance → aisle 1 → CORNER → back aisle → CORNER → aisle 2 → freezer →
+   checkout → SIR MOPSALOT.  Two right-handers means the run uses THREE
+   world headings (+Z, +X, −Z) — which is exactly what the amended
+   direction LAW is asserted against.
+
+   New verbs on show: a `vent` updraft to the high shelf, the price-check
+   `zip` line as a secret route to golden mouse 2, a `slick` freezer aisle,
+   and checkout conveyors (plain old `mover` floors).                    */
+function lvlMarket() {
+  const a = A();
+  const P = PAL_MARKET;
+  a.corr(-10, 84, 6.2);                       // aisle 1
+  a.corr(84, 102, 6.2);                       // CORNER 1  (right)
+  a.corr(102, 146, 6.6);                      // back aisle
+  a.corr(146, 164, 6.2);                      // CORNER 2  (right)
+  a.corr(164, 206, 6.4);                      // aisle 2
+  a.corr(206, 228, 7.0);                      // the freezer
+  a.corr(228, 256, 8.0);                      // the checkout
+  a.corr(256, 302, 9.6);                      // SIR MOPSALOT's clean floor
+  a.floor(-8, 40, 0, 13.0, 0, 'tile');
+  a.floor(44, 84, 0, 13.0, 0, 'tile');        // GAP 40–44
+  a.floor(84, 102, 0, 13.0, 0, 'tile');
+  a.floor(102, 146, 0, 13.6, 0, 'tile');
+  a.floor(146, 164, 0, 13.0, 0, 'tile');
+  a.floor(164, 190, 0, 13.2, 0, 'tile');
+  a.floor(194, 206, 0, 13.2, 0, 'tile');      // GAP 190–194
+  a.floor(206, 228, 0, 14.6, 0, 'ice');       // the freezer floor
+  a.floor(228, 242, 0, 16.4, 0, 'tile');
+  a.floor(246, 256, 0, 16.4, 0, 'tile');      // GAP 242–246 (the conveyor)
+  a.floor(256, 302, 0, 19.6, 0, 'tile');
+  /* LAW the zipline taught us: the camera clamps UNDER the ceiling
+     (updateCam → ceilAt), so anything the cat can stand on — or dangle
+     from — must live well below it, or the lens ends up pointed at the
+     light battens with the hero out of frame.  Hence a big-box ceiling,
+     and the back aisle is warehouse racking height. */
+  a.walls(-8, 84, 6.2, 4.4, 'market');
+  a.walls(84, 102, 6.2, 4.4, 'market');
+  a.walls(102, 146, 6.6, 5.6, 'market');
+  a.walls(146, 164, 6.2, 4.4, 'market');
+  a.walls(164, 206, 6.4, 4.4, 'market');
+  a.walls(206, 228, 7.0, 4.2, 'market');
+  a.walls(228, 256, 8.0, 4.8, 'market');
+  a.walls(256, 302, 9.6, 5.8, 'market');
+
+  /* — the entrance: trolleys, the welcome board, and the first aisle — */
+  a.doors(0, -4);
+  a.cart(-4.4, 2, 0.3); a.cart(-3.1, 4.6, -0.25); a.cart(4.6, 3.2, 0.12);
+  a.sign(-5.2, 2.6, 8, 3.2, 1.0, P.signB);
+  a.row(0, 0.35, 1, 0, 0, 1.3, 7);
+  a.shelf2(-5.0, 18, 16);
+  a.shelf2(5.0, 18, 16);
+  a.row(-1.6, 0.35, 12, 0, 0, 1.3, 6);
+  a.e('can', -2.0, 0.20, 26, { lane: 26 });
+  a.sign(5.2, 2.6, 16, 3.2, 1.0, P.signA);
+  a.pa(20, 'CLEAN-UP, AISLE CAT', 'management apologises for the cat');
+  a.p('plant', -3.2, 22);
+  a.endcap(-3.0, 30);
+  a.e('cuke', 2.6, 0, 30, {});                // produce aisle: LAUNCH up
+  a.box(4.0, 3.30, 33.2, 3.2, 0.24, 2.6, P.shelfM);
+  a.treat('fish', 4.0, 3.62, 33.2);
+  a.arc(2.6, 1.2, 30.6, 1.4, 2.8, 5, 1.7);
+  a.crate(-4.6, 0, 36, 0.66);
+
+  /* the first GAP — two pallets of dog food across it */
+  a.box(-1.6, 0.42, 40.8, 1.7, 0.84, 1.7, P.crate);
+  a.box(1.7, 0.42, 43.2, 1.7, 0.84, 1.7, P.crate);
+  a.arc(-1.6, 1.1, 40.8, 3.3, 2.4, 5, 0.9);
+
+  /* the shelf-top run + GOLDEN MOUSE 1 (crate stack → tier 1 → tier 2) */
+  a.shelf2(-5.2, 56, 18);
+  a.shelf2(5.2, 56, 18);
+  a.crate(-3.5, 0, 47, 0.68); a.crate(-3.5, 0.68, 47, 0.64);
+  a.arc(-3.5, 1.7, 48, 0, 4.0, 5, 1.1);
+  a.e('melon', 0, 0, 52, { rng: 3.4 });
+  a.e('spray', 4.6, 1.18, 58, { face: Math.PI });
+  a.e('can', 2.2, 0.20, 62, { lane: 62 });
+  a.mouse(-5.2, 2.62, 62);                    // on the tier-2 deck
+  a.row(-5.2, 2.62, 54, 0, 0, 1.2, 5);
+  a.sign(-5.6, 2.9, 50, 3.4, 1.0, P.signB);
+  a.treat('fish', 0, 0.5, 66);
+
+  /* the dryer vent by the bakery: the first UPDRAFT, up to a high shelf */
+  a.vent(0, 70, 2.4, 6.4, 0, 4.2);
+  a.box(0, 3.30, 74.4, 3.8, 0.24, 3.0, P.shelfM);
+  a.row(-1.2, 3.76, 74.4, 0.8, 0, 0, 4);
+  a.arc(0, 0.6, 68, 0, 2.0, 4, 3.4);
+  a.e('can', -1.4, 0.20, 78, { lane: 78 });
+  a.row(0, 0.35, 76, 0, 0, 1.2, 6);
+  a.check(80, 0);
+
+  /* — CORNER 1: light on purpose (floor, deco, a kibble arc, one melon) — */
+  a.arc(0, 0.5, 86, 0, 12.0, 9, 1.0);
+  a.e('melon', 0, 0, 93, { rng: 2.6 });
+  a.cart(-4.6, 90, 0.6);
+  a.cone(4.4, 90, 0.4);
+  a.sign(-5.4, 2.7, 96, 3.0, 0.9, P.signA);
+
+  /* — the back aisle: the price-check pulley (VENT → ZIP → MOUSE 2) — */
+  a.shelf2(-5.4, 112, 15);
+  a.shelf2(5.4, 112, 15);
+  a.row(0, 0.35, 104, 0, 0, 1.3, 8);
+  a.e('vac', 1.6, 0, 108, { rng: 3.2 });      // a floor scrubber
+  a.pa(110, 'PRICE CHECK ON AISLE CAT', 'bring the cat to the front please');
+  a.vent(-4.2, 118, 2.2, 6.6, 0, 4.6);
+  a.box(-4.2, 3.90, 121.0, 3.0, 0.24, 3.0, P.shelfM);
+  /* LAW the ride taught us: the cat dangles 0.62 m UNDER the wire, so the
+     landing ledge has to sit below the far end — release him level with a
+     ledge and the solver ejects him off its side instead */
+  a.zip(-4.2, 121.8, 4.8, 138.0, 4.35, 3.00);
+  a.box(4.8, 1.90, 140.0, 4.0, 0.24, 4.8, P.shelfM);
+  a.mouse(4.8, 2.40, 140.8);                  // GOLDEN MOUSE 2
+  a.arc(-4.2, 4.5, 122.6, 0, 3.0, 4, 0.5);
+  a.e('can', -2.4, 0.20, 126, { lane: 126 });
+  a.e('melon', 0, 0, 130, { rng: 3.6 });
+  a.endcap(3.2, 124);
+  a.crate(-2.0, 0, 133, 0.66); a.crate(-2.0, 0.66, 133, 0.62);
+  a.treat('fish', 0, 0.5, 136);
+  a.sign(5.8, 2.9, 128, 3.6, 1.1, P.signB);
+  a.row(-3.0, 0.35, 140, 0, 0, 1.2, 6);
+  a.cart(4.2, 144, -0.4);
+
+  /* — CORNER 2 — */
+  a.arc(0, 0.5, 148, 0, 12.0, 9, 1.0);
+  a.cone(-4.2, 152, 0.2);
+  a.cart(4.4, 157, -0.4);
+  a.sign(5.4, 2.7, 158, 3.0, 0.9, P.signA);
+
+  /* — aisle 2: cans, a scrubber, a gap, and the milk saucer — */
+  a.check(168, 0);
+  a.shelf2(-5.0, 177, 14);
+  a.shelf2(5.0, 177, 14);
+  a.row(0, 0.35, 166, 0, 0, 1.3, 7);
+  a.e('spray', -4.6, 1.18, 172, { face: 0 });
+  a.treat('fish', 0, 0.5, 174);
+  a.e('can', 1.8, 0.20, 180, { lane: 180 });
+  a.e('vac', 0, 0, 184, { rng: 3.6 });
+  a.e('can', -2.6, 0.20, 188, { lane: 188 });
+  a.crate(3.2, 0, 186, 0.66);
+  a.mouse(5.0, 2.62, 182);                    // tier-2 deck again, other side
+  a.arc(3.2, 1.6, 187, 1.8, -3.6, 5, 1.2);
+  a.box(-1.5, 0.42, 190.8, 1.7, 0.84, 1.7, P.crate);
+  a.box(1.6, 0.42, 193.2, 1.7, 0.84, 1.7, P.crate);
+  a.arc(-1.5, 1.1, 190.8, 3.1, 2.4, 5, 0.9);
+  a.endcap(-3.4, 198);
+  a.pa(197, 'FROZEN PEAS, HALF PRICE', 'and one (1) loose cat');
+  a.row(0, 0.35, 196, 0, 0, 1.2, 5);
+  a.treat('milk', 0, 0.55, 202);              // ZOOMIES into the freezer
+  a.sign(-5.6, 2.9, 200, 3.4, 1.0, P.signB);
+
+  /* — the freezer: low friction, breath puffs, frosted cases — */
+  a.slick(0, 206, 228, 13.4, 1, true);
+  a.freez(-5.6, 212, 12);
+  a.freez(5.6, 212, 12);
+  a.freez(-5.6, 224, 6);
+  a.freez(5.6, 224, 6);
+  a.row(0, 0.35, 208, 0, 0, 1.4, 10);
+  a.arc(-3.0, 0.5, 214, 6.0, 4.0, 6, 1.0);
+  a.e('can', 0, 0.20, 221, { lane: 221 });
+  a.cone(-3.4, 218, 0.3);
+  a.sign(-6.2, 3.0, 216, 3.4, 1.0, P.signA);
+
+  /* — the checkout: conveyor movers over the last gap — */
+  a.check(232, 0);
+  a.reg(-4.2, 236); a.reg(4.2, 236);
+  a.reg(-4.2, 250); a.reg(4.2, 250);
+  a.conv(0, 238.4, 6.0, 3.2);                 // the cradle stops at the gap…
+  a.conv(0, 249.6, 5.6, 3.2);                 // …and picks up on the far side
+  a.mover(0, 0.42, 244, 3.0, 0.24, 3.0, 'z', 3.0, 4.6, P.belt);
+  a.mover(-3.9, 1.16, 239, 2.4, 0.24, 2.6, 'x', 2.4, 5.0, P.belt);
+  a.mouse(4.2, 1.44, 250);                    // on top of the far register
+  a.row(0, 0.35, 230, 0, 0, 1.3, 6);
+  a.arc(-2.0, 0.6, 246.4, 4.0, 4.0, 6, 1.0);
+  a.e('melon', 0, 0, 253, { rng: 4.0 });
+  a.cart(-6.4, 234, 0.2); a.cart(6.4, 248, -0.3);
+  /* the checkout banners go on the WALLS: a board hung over the middle of
+     the lane sits right where the camera boom does */
+  a.sign(-7.0, 3.1, 240, 4.0, 1.1, P.signB);
+  a.sign(7.0, 3.1, 246, 4.0, 1.1, P.signA);
+  a.treat('fish', 0, 0.5, 254);
+
+  /* — SIR MOPSALOT's freshly mopped arena — */
+  a.shelf2(-8.2, 270, 18);
+  a.shelf2(8.2, 270, 18);
+  a.cone(-6.0, 262, 0.4); a.cone(6.0, 262, -0.3); a.cone(-2.2, 296, 0.1);
+  a.cone(5.4, 284, 0.9); a.cone(-5.0, 290, -0.5);
+  a.crate(-5.2, 0, 266, 0.66); a.crate(5.2, 0, 266, 0.66);
+  a.crate(-7.0, 0, 294, 0.62); a.crate(7.2, 0, 292, 0.62);
+  a.cart(-7.4, 292, 0.5); a.cart(7.6, 276, -0.7);
+  a.endcap(-8.4, 288); a.endcap(8.4, 288);
+  a.sign(-9.0, 3.6, 276, 4.4, 1.2, P.signB);
+  a.sign(9.0, 3.6, 284, 4.4, 1.2, P.signA);
+  a.sign(0, 4.6, 264, 6.0, 1.3, P.signB);
+  a.boss(280, 'mop');
+  a.end(296);
+  return { id: 'l4', name: 'MARKET SWEEP', sub: 'aisles · freezer · checkout',
+    theme: 'market', pal: PAL_MARKET, far: 'none', seed: 4404, len: 296, boss: 'mop',
+    /* THE ROUTE: two right-handers.  Each corner is 18 m of track, so the
+       pivot radius is 18/(π/2) ≈ 11.46 m and the INNER edge radius is
+       11.46 − 6.2 ≈ 5.3 m — the ~5 m bend the design asks for. */
+    path: [TURN(1, 84, 102), TURN(1, 146, 164)],
+    chunks: a.C };
+}
+
+/* ══════════════════ ROMP 5 — GREENHOUSE JUNGLE ═════════════════════
+   THE VERTICAL ONE (LEVELS2 §B).  Route: greenhouse floor → CORNER →
+   tier 1 → SWITCHBACK CORNER → tier 2 → steam vents up to the canopy walk
+   → straight finish among the tables → QUEEN BEE.
+
+   Both corners turn LEFT, which is what makes the second one a switchback:
+   the route comes back on itself and the world headings are +Z, −X, −Z.
+   New vocabulary on show: giant LEAF trampolines, terracotta POT STACKS you
+   climb, slatted STAGING BENCHES as upper runways, WATERING CANS (the
+   sprinkler, reskinned), BEES that swoop (the crow, reskinned), BUTTERFLIES
+   leading the kibble trails, and a two-vent STEAM RISER to the canopy.     */
+function lvlGreen() {
+  const a = A();
+  const P = PAL_GREEN;
+  a.corr(-10, 62, 6.2);                       // the greenhouse floor
+  a.corr(62, 80, 6.2);                        // CORNER 1  (left)
+  a.corr(80, 132, 6.2);                       // tier 1
+  a.corr(132, 150, 6.2);                      // CORNER 2  (the switchback)
+  a.corr(150, 196, 6.2);                      // tier 2
+  a.corr(196, 248, 6.6);                      // the canopy house
+  a.corr(248, 316, 9.4);                      // QUEEN BEE's flower bed
+  a.floor(-8, 24, 0, 12.4);
+  a.floor(28, 84, 0, 12.4);                   // GAP 24–28 ; CORNER 1 inside
+  a.floor(92, 118, 2.2, 12.4);                // GAP 84–92  (the pot-stack climb)
+  a.floor(122, 150, 4.4, 12.4);               // GAP 118–122 ; CORNER 2 inside
+  a.floor(150, 174, 4.4, 12.4);
+  a.floor(178, 196, 6.2, 12.4);               // GAP 174–178
+  a.floor(196, 242, 6.2, 12.8);               // the canopy house floor
+  a.floor(242, 248, 3.0, 12.0);               // the step down to the arena
+  a.floor(248, 316, 0, 18.8);
+  /* LAW (romp 4, §emitFloor): the camera clamps UNDER the ceiling, so every
+     room is as tall as the highest thing you can stand on in it — the canopy
+     walk is at 11.8 m, hence a 16.4 m glass house over it. */
+  a.walls(-8, 84, 6.2, 6.6, 'glass');
+  a.walls(84, 150, 6.2, 9.4, 'glass');
+  a.walls(150, 196, 6.2, 11.6, 'glass');
+  a.walls(196, 248, 6.6, 16.4, 'glass');
+  a.walls(248, 316, 9.4, 9.2, 'glass');
+
+  /* — the greenhouse floor: benches, ferns, the first leaf trampolines — */
+  a.doors(0, -3);
+  a.row(0, 0.35, 2, 0, 0, 1.3, 7);
+  a.fern(-4.6, 4, 1.3); a.fern(4.8, 6, 1.2);
+  a.fern(-5.2, 9, 1.1); a.fern(5.2, 11, 1.2);
+  a.palm(-5.8, 14, 6.0); a.palm(5.8, 20, 5.4);
+  a.canopy(-5.6, 5.2, 8, 2.0); a.canopy(5.8, 5.4, 16, 2.2);
+  a.canopy(-5.4, 5.6, 26, 2.0); a.canopy(5.6, 5.2, 34, 2.1);
+  a.canopy(-5.6, 5.4, 46, 2.0); a.canopy(5.4, 5.6, 54, 2.2);
+  a.stage(-5.0, 16, 14, 2.2, 1.15);
+  a.stage(5.0, 16, 14, 2.2, 1.15);
+  a.row(-5.0, 1.50, 12, 0, 0, 1.2, 6);
+  a.e('sprk', 0, 0, 10, { per: 3.0, look: 'can' });
+  a.pa(8, 'MIND THE BEES', 'they are very busy and you are very orange');
+  a.pots(-3.4, 22, 3);
+  /* the first GAP — two giant leaves across it (tramp: they BOUNCE) */
+  a.leaf(-1.2, 1.9, 24.8, 1.6);
+  a.leaf(1.6, 1.9, 27.2, 1.6);
+  a.arc(-1.2, 2.6, 24.8, 2.8, 2.4, 5, 1.0);
+  a.e('crow', -4.4, 2.6, 32, { look: 'bee' });
+  a.fern(5.2, 30, 1.2);
+  a.e('sprk', 0, 0, 34, { per: 2.4, look: 'can' });
+  a.ivy(-6.0, 6.3, 30, 3.4); a.ivy(6.0, 6.3, 38, 3.8);
+  /* GOLDEN MOUSE 1 — pot tower, then a leaf bounce to the top of it */
+  a.pots(4.6, 40, 4);
+  a.leaf(4.6, 3.1, 43.2, 1.5);
+  a.mouse(4.6, 4.9, 45.6);
+  a.arc(3.0, 1.4, 40, 1.6, 4.0, 5, 1.6);
+  a.e('flit', -3.4, 1.6, 42, { look: 'bfly', ph: 0.8, rng: 2.6 });
+  a.treat('fish', 0, 0.5, 48);
+  a.e('crow', 3.6, 2.8, 50, { look: 'bee' });
+  a.pots(-4.8, 52, 2);
+  a.row(0, 0.35, 46, 0, 0, 1.2, 6);
+  a.fern(-5.2, 56, 1.0); a.fern(5.4, 58, 1.1);
+  a.check(56, 0);
+
+  /* — CORNER 1: floor, deco, a kibble arc, ONE slow bee (corners stay light) — */
+  a.arc(0, 0.5, 64, 0, 12.0, 9, 1.0);
+  a.e('crow', 0, 2.8, 71, { look: 'bee' });
+  a.fern(-4.8, 68, 1.0); a.fern(4.8, 74, 1.1);
+  a.ivy(-6.0, 6.3, 70, 3.0);
+
+  /* — tier 1: the climb.  Pot stacks and leaves bridge the 8 m gap up. — */
+  a.pots(-2.0, 85.5, 3);
+  a.leaf(0.4, 2.0, 88.0, 1.5);
+  a.leaf(2.4, 2.4, 90.4, 1.4);
+  a.arc(-2.0, 2.4, 85.5, 4.4, 5.0, 6, 1.2);
+  a.stage(-5.2, 100, 16, 2.4, 3.5);           // the tier-1 upper runway
+  a.row(-5.2, 3.85, 96, 0, 0, 1.2, 6);
+  a.e('sprk', -1.0, 2.2, 98, { per: 2.2, look: 'can' });
+  a.e('crow', 3.4, 4.6, 104, { look: 'bee' });
+  a.pots(4.6, 96, 3);
+  a.leaf(2.6, 4.0, 108, 1.6);
+  a.e('flit', -3.0, 3.4, 102, { look: 'bfly', ph: 1.2, rng: 2.6 });
+  a.arc(-4.0, 2.7, 106, 8.0, 6.0, 8, 1.4);
+  a.treat('fish', 0, 2.7, 112);
+  a.fern(-5.4, 114, 1.2);
+  a.palm(5.6, 112, 7.0);
+  /* the GAP into the switchback, bridged by two more leaves */
+  a.leaf(-1.0, 3.0, 119.2, 1.5);
+  a.leaf(1.2, 3.6, 121.0, 1.5);
+  a.check(126, 0);
+
+  /* — CORNER 2 (the switchback) — */
+  a.arc(0, 4.9, 134, 0, 12.0, 9, 1.0);
+  a.e('crow', 0, 7.0, 141, { look: 'bee' });
+  a.fern(-4.8, 138, 1.1); a.fern(4.8, 144, 1.0);
+  a.ivy(6.0, 9.3, 140, 3.2);
+
+  /* — tier 2: the long bench run — */
+  a.treat('milk', 0, 4.95, 154);              // ZOOMIES along the benches
+  a.stage(-5.4, 162, 18, 2.4, 5.6);
+  a.stage(5.4, 162, 18, 2.4, 5.6);
+  a.row(0, 4.75, 152, 0, 0, 1.3, 8);
+  a.e('sprk', 0, 4.4, 160, { per: 2.0, look: 'can' });
+  a.e('crow', -3.6, 6.8, 166, { look: 'bee' });
+  a.e('crow', 3.8, 6.8, 172, { look: 'bee' });
+  a.pots(-3.0, 168, 3);
+  a.leaf(0, 6.0, 170, 1.7);
+  a.arc(-4.0, 5.0, 158, 8.0, 8.0, 8, 1.4);
+  a.fern(5.0, 156, 1.1);
+  /* the GAP up to tier 2 proper */
+  a.leaf(-0.8, 5.0, 175.0, 1.5);
+  a.leaf(1.4, 5.6, 177.2, 1.5);
+  a.palm(-6.2, 182, 7.4);
+  /* GOLDEN MOUSE 3 — on the HIGH bench, only a leaf bounce reaches it */
+  a.stage(-5.4, 186, 10, 2.4, 8.6);
+  a.mouse(-5.4, 9.1, 186);
+  a.leaf(-2.4, 7.2, 183, 1.5);
+  a.e('flit', 2.4, 7.0, 184, { look: 'bfly', ph: 2.4, rng: 2.2 });
+  a.row(0, 6.55, 182, 0, 0, 1.2, 6);
+  a.treat('fish', 0, 6.7, 192);
+  a.check(194, 0);
+
+  /* — the STEAM RISER up to the CANOPY WALK — */
+  /* LAW, paid for here: an updraft column must rise through OPEN AIR.  The
+     first pass put the vent at z=204 under a canopy board that starts at
+     z=205, and the cat floated up and PINNED under it at y=10.76 — held
+     there by the column, unable to climb or drop.  The vents now sit clear
+     of every board (and the boards start at 205). */
+  a.vent(0, 200, 2.8, 8.4, 6.2, 9.0);
+  a.vent(-5.0, 212, 2.2, 7.6, 6.2, 8.4);
+  a.arc(0, 6.9, 197, 0, 3.0, 4, 1.4);
+  /* THE CANOPY.  Tall palms whose crowns reach walk height, plus free-hanging
+     leaf clusters either side of it — the first pass was a run of planks
+     floating in a glass box, because a canopy walk needs a canopy. */
+  a.palm(-5.6, 200, 15.0); a.palm(5.8, 210, 16.0);
+  a.palm(-5.8, 226, 15.6); a.palm(5.6, 236, 14.4);
+  a.canopy(-5.4, 11.4, 206, 3.2); a.canopy(5.6, 12.2, 214, 3.4);
+  a.canopy(-5.6, 12.6, 222, 3.0); a.canopy(5.4, 11.6, 230, 3.2);
+  a.canopy(-4.8, 13.8, 236, 2.8); a.canopy(4.8, 13.4, 200, 2.6);
+  a.canopy(0, 14.6, 218, 2.6); a.canopy(0, 14.2, 232, 2.4);
+  a.box(0, 11.68, 208, 5.0, 0.24, 6.0, P.bench);
+  a.box(0, 11.68, 216, 4.0, 0.24, 6.0, P.bench);
+  a.box(-2.2, 11.68, 224, 4.0, 0.24, 6.0, P.bench);
+  a.box(0.6, 11.68, 232, 4.4, 0.24, 6.0, P.bench);
+  a.box(0, 11.68, 239, 5.6, 0.24, 5.0, P.bench);
+  a.row(0, 12.15, 210, 0, 0, 1.3, 6);
+  a.row(-2.2, 12.15, 222, 0, 0, 1.3, 5);
+  /* GOLDEN MOUSE 2 — a side branch off the canopy */
+  a.box(4.6, 11.68, 228, 3.0, 0.24, 3.0, P.bench);
+  a.mouse(4.6, 12.3, 228);
+  a.e('crow', -4.0, 13.0, 220, { look: 'bee' });
+  a.e('crow', 4.2, 13.0, 234, { look: 'bee' });
+  a.e('flit', 0, 12.6, 214, { look: 'bfly', ph: 0.6, rng: 3.0 });
+  a.ivy(-6.4, 15.8, 206, 5.0); a.ivy(6.4, 15.8, 218, 5.4);
+  a.ivy(-6.4, 15.8, 232, 4.6);
+  a.treat('fish', 0, 6.7, 226);               // …on the safety floor below
+  a.fern(-4.4, 236, 1.2); a.fern(4.6, 230, 1.1);
+  /* the stepped descent back to the tables (no drop is worse than 3.2 m) */
+  a.box(2.6, 9.68, 240, 3.0, 0.24, 3.0, P.bench);
+  a.box(-2.0, 7.88, 241.5, 3.0, 0.24, 3.0, P.bench);
+  a.pa(238, 'THE CANOPY IS NOT A WALKWAY', 'the cat disagrees');
+
+  /* — QUEEN BEE's flower bed — */
+  a.bed(0, 288, 14, 4.0);
+  a.palm(-8.4, 258, 8.0); a.palm(8.6, 258, 8.4);
+  a.palm(-8.8, 300, 7.6); a.palm(8.8, 300, 8.0);
+  a.fern(-7.0, 268, 1.3); a.fern(7.2, 272, 1.2);
+  a.pots(-7.6, 280, 3); a.pots(7.8, 280, 3);
+  a.leaf(-5.4, 1.9, 272, 1.7);
+  a.leaf(5.4, 1.9, 272, 1.7);
+  a.stage(-8.6, 292, 12, 2.2, 1.2);
+  a.stage(8.6, 292, 12, 2.2, 1.2);
+  a.ivy(-6.6, 8.8, 262, 3.6); a.ivy(6.6, 8.8, 276, 3.6);
+  a.canopy(-8.2, 7.6, 264, 3.0); a.canopy(8.4, 7.8, 268, 3.2);
+  a.canopy(-8.4, 8.0, 296, 3.0); a.canopy(8.2, 7.6, 292, 2.8);
+  a.canopy(0, 8.4, 302, 3.4);
+  a.fern(-6.2, 298, 1.3); a.fern(6.4, 294, 1.2);
+  a.row(0, 0.35, 252, 0, 0, 1.3, 7);
+  a.treat('fish', 0, 0.5, 256);
+  a.check(252, 0);
+  a.boss(284, 'bee');
+  a.end(306);
+  return { id: 'l5', name: 'GREENHOUSE JUNGLE', sub: 'tiers · vents · the canopy',
+    theme: 'green', pal: PAL_GREEN, far: 'none', seed: 5505, len: 306, boss: 'bee',
+    /* TWO LEFT-HANDERS — the second one is the switchback, and the run uses
+       the +Z / −X / −Z headings */
+    path: [TURN(-1, 62, 80), TURN(-1, 132, 150)],
+    chunks: a.C };
+}
+
+/* ══════════════════ ROMP 6 — SKYLINE SWING ═════════════════════════
+   John's Spider-Man level, and the showstopper (LEVELS2 §B).  Daytime
+   rooftops, blue-gold sky.  Route: rooftop run → gap chain → CORNER around
+   the skyscraper ledge → ZIPLINE across the avenue → crane platforms →
+   vent updraft between towers → CORNER → the ridge run (two more ziplines)
+   → the water-tower deck, and DELIVERY DRONE 9000.
+
+   THREE long ziplines, each over a REAL drop (there is simply no floor under
+   them), and each running at its own `sp` — a 24 m line at romp 4's 9 m/s
+   reads as a bus ride, not a swing.                                      */
+function lvlSky() {
+  const a = A();
+  const P = PAL_SKY;
+  a.corr(-10, 58, 6.6);
+  a.corr(58, 76, 6.6);                        // CORNER 1 (right, round the tower)
+  a.corr(76, 152, 6.6);
+  a.corr(152, 170, 6.6);                      // CORNER 2 (right)
+  a.corr(170, 252, 7.0);
+  a.corr(252, 300, 9.6);                      // the water-tower deck
+  a.floor(-8, 26, 0, 13.4);
+  a.floor(30, 42, 1.2, 13.2);                 // GAP 26–30
+  a.floor(46, 58, 2.4, 13.2);                 // GAP 42–46
+  a.floor(58, 84, 2.4, 13.2);                 // CORNER 1 + the launch ledge
+  /*            ── THE AVENUE: no floor at all from 84 to 108 ── */
+  a.floor(108, 122, 1.2, 13.2);
+  /*            ── the crane gap, 122 to 136 ── */
+  a.floor(136, 148, 1.2, 13.2);
+  /*            ── the updraft gap, 148 to 152 ── */
+  a.floor(152, 188, 5.4, 13.2);               // CORNER 2 + the high ridge
+  /*            ── the second avenue, 188 to 208 ── */
+  a.floor(208, 222, 3.0, 13.2);
+  /*            ── the third crossing, 222 to 238 ── */
+  a.floor(238, 252, 1.2, 14.0);
+  a.floor(252, 300, 0, 19.2);
+  a.walls(-8, 300, 0, 0, 'roof');             // open sky: no ceiling, no clamp
+
+  /* — the rooftop run — */
+  a.p('parapet', -6.8, -8, 26); a.p('parapet', 6.8, -8, 26);
+  a.row(0, 0.35, -4, 0, 0, 1.3, 7);
+  a.p('chimney', -4.6, 8, 1.8);
+  a.p('chimney', 4.6, 15, 2.0);
+  a.ac(-3.2, 0, 6); a.ac(3.4, 0, 12);
+  a.e('vent', 3.4, 0, 12, { per: 1.8, amp: -1 });
+  a.e('crow', 3.6, 2.6, 16, {});
+  a.crate(-2.2, 0, 18, 0.66); a.crate(-2.2, 0.66, 18, 0.62);
+  a.arc(-2.8, 0.5, 9, 5.6, 4.0, 6, 1.2);
+  a.kite(-9.0, 15.0, 14, 0xff7a5a);
+  a.kite(10.0, 19.0, 30, 0x5fd0ff);
+  a.treat('fish', 0, 0.5, 24);
+  a.pa(20, 'DO NOT LOOK DOWN', 'the cat is looking down');
+  /* — the gap chain: two rooftops, two hops, awnings to bounce off — */
+  a.box(-1.2, 0.6, 27.4, 2.4, 1.2, 1.8, P.brick);
+  a.awn(-4.2, 3.0, 34, 3.6, 2.4, 0xff7a5a);
+  a.awn(4.2, 3.2, 38, 3.6, 2.4, 0x5fd0ff);
+  a.arc(-4.2, 3.4, 34, 8.4, 5.0, 8, 2.0);
+  a.p('parapet', -6.3, 30, 42); a.p('parapet', 6.3, 30, 42);
+  a.e('crow', -3.4, 3.4, 36, {});
+  a.ac(4.4, 1.2, 32);
+  a.e('pigeon', -1.2, 1.35, 40, { ph: 0.2 });
+  a.e('pigeon', -0.3, 1.35, 40.6, { ph: 1.1 });
+  a.e('pigeon', 0.7, 1.35, 40.2, { ph: 2.4 });
+  a.e('pigeon', 1.5, 1.35, 41.0, { ph: 3.6 });
+  a.box(-1.4, 1.8, 43.4, 2.4, 1.2, 1.8, P.brick);
+  a.box(1.6, 2.2, 45.2, 2.4, 2.0, 1.8, P.brick);
+  a.arc(-1.4, 2.6, 43.4, 3.0, 2.0, 4, 0.9);
+  a.p('parapet', -6.3, 46, 58); a.p('parapet', 6.3, 46, 58);
+  a.check(52, 0);
+  /* THE SKYSCRAPER the corner bends around.  It sits just OUTSIDE the
+     corridor on the INSIDE of the bend — a prop this big cannot live inside
+     a corner span itself (anything reaching past the pivot radius folds
+     through it, §p5b CORNER_MIN_R), so the tower stands on the straight and
+     the bend wraps past its face. */
+  a.tower(14.4, 46, 12, 30, 44);
+  a.ant(-5.0, 2.4, 50);
+  a.e('zap', 0, 2.4, 54, { per: 1.5 });
+
+  /* — CORNER 1: the ledge round the tower.  Light, as the law says. — */
+  a.arc(0, 2.9, 60, 0, 12.0, 9, 1.0);
+  a.e('crow', 0, 4.8, 67, {});
+  a.ac(-4.8, 2.4, 64);
+  a.p('parapet', -6.9, 58, 84);
+  a.kite(-12.0, 22.0, 70, 0xffd24a);
+
+  /* — the launch ledge: a window-washer rig, a mouse at the top of it — */
+  a.washer(-5.4, 2.4, 80, 3.2);
+  a.mover(-5.4, 3.6, 80, 3.0, 0.24, 2.6, 'y', 2.2, 5.4, P.metal);
+  a.mouse(-5.4, 6.6, 80);                     // GOLDEN MOUSE 1
+  a.arc(-5.4, 4.2, 78, 0, 4.0, 5, 0.8);
+  a.awn(4.6, 4.0, 78, 3.6, 2.4, 0xffd24a);    // bounce, then GRAB the wire
+  a.row(0, 2.75, 76, 0, 0, 1.3, 6);
+  a.p('parapet', 6.9, 58, 84);
+  a.tower(-14.8, 96, 13, 30, 40);
+  /* ZIPLINE 1 — across the avenue.  25 m, and there is nothing underneath.
+     LAW (extending Builder A's #4): the far end must sit OVER the landing
+     floor, not at the lip of it.  All three of romp 6's lines first ended at
+     the exact z the floor starts, and the gentle 0.3× step-off dropped the
+     cat onto the FACE of the slab instead of the top — one heart, every
+     time, on a traversal that is supposed to be the safe way across. */
+  a.zip(0, 83.0, 0, 108.6, 4.6, 2.0, 12.5);
+  a.pa(82, 'THE AVENUE', 'grab the wire, do not think about it');
+
+  /* — the far rooftop → the crane gap — */
+  a.p('parapet', -6.9, 108, 122); a.p('parapet', 6.9, 108, 122);
+  a.row(0, 1.55, 110, 0, 0, 1.3, 7);
+  a.e('pigeon', -0.8, 1.55, 114, { ph: 0.5 });
+  a.e('pigeon', 0.6, 1.55, 114.8, { ph: 2.1 });
+  a.e('pigeon', 1.6, 1.55, 114.2, { ph: 3.9 });
+  a.treat('fish', 0, 1.7, 112);
+  a.ac(-4.6, 1.2, 118);
+  a.e('vent', -4.6, 1.2, 118, { per: 1.6, amp: 1 });
+  a.check(118, 0);
+  a.crane(-9.6, 124, 13);
+  a.crane(9.8, 134, 16);
+  a.mover(0, 1.0, 126.5, 4.0, 0.30, 3.4, 'x', 3.6, 5.0, P.craneA);
+  a.mover(0, 1.0, 132.5, 3.6, 0.30, 3.0, 'x', 3.2, 4.2, P.craneA);
+  a.arc(-3.4, 1.6, 126, 6.8, 7.0, 8, 1.2);
+  /* GOLDEN MOUSE 2 — on the crate tower past the cranes */
+  a.crate(4.8, 1.2, 140, 0.70); a.crate(4.8, 1.90, 140, 0.66);
+  a.box(4.8, 2.68, 140, 1.6, 0.24, 1.6, P.metal);
+  a.mouse(4.8, 3.3, 140);
+  a.e('crow', -3.8, 3.2, 142, {});
+  a.p('chimney', -5.2, 144, 2.2);
+  a.kite(11.0, 24.0, 130, 0xff5fa8);
+  /* — the UPDRAFT between the towers: the only way onto the high ridge — */
+  a.vent(0, 150, 3.0, 7.6, 1.2, 8.4);
+  a.ac(-3.0, 1.2, 146); a.ac(3.0, 1.2, 146);
+  a.arc(0, 2.0, 147, 0, 2.0, 4, 3.6);
+  a.pa(144, 'STEAM RISING', 'ride it up');
+
+  /* — CORNER 2, then the high ridge run — */
+  a.arc(0, 5.9, 154, 0, 12.0, 9, 1.0);
+  a.e('crow', 0, 7.8, 161, {});
+  a.p('parapet', -6.9, 152, 188); a.p('parapet', 6.9, 152, 188);
+  a.ac(4.8, 5.4, 158);
+  a.treat('milk', 0, 5.95, 176);              // ZOOMIES along the ridge
+  /* ONE zapper, not two: in DAYLIGHT an unlit zapper is a dark T-post on a
+     pale roof (the touch shot caught it), so the ridge's other hazard is a
+     swooping bird and a gust that pushes you toward a very long drop */
+  a.e('zap', 2.8, 5.4, 180, { per: 1.4, ph: 1.4 });
+  a.e('crow', -3.2, 7.8, 172, {});
+  a.e('vent', -4.6, 5.4, 176, { per: 1.7, amp: 1 });
+  a.ac(-4.6, 5.4, 176);
+  a.e('coon', -3.6, 5.4, 168, {});
+  a.e('coon', 3.8, 5.4, 184, {});
+  a.p('dumpster', 6.2, 174, 0);
+  a.row(0, 5.75, 166, 0, 0, 1.3, 8);
+  a.arc(-4.0, 5.9, 178, 8.0, 6.0, 8, 1.4);
+  a.p('chimney', -5.4, 182, 2.4);
+  a.check(180, 0);
+  a.kite(-11.5, 26.0, 176, 0x63b85a);
+  a.tower(-16.4, 200, 14, 34, 52);
+  a.tower(16.0, 230, 13, 30, 46);
+  /* ZIPLINE 2 — 20 m, and the ✕-DROP half way along is the only route to
+     the ledge with GOLDEN MOUSE 3 on it */
+  a.zip(0, 187.0, 0, 208.6, 7.4, 4.0, 12.5);
+  a.box(0, 2.45, 203.0, 4.6, 0.30, 4.2, P.metal);
+  a.mouse(0, 3.1, 203);
+  a.arc(-1.6, 2.9, 203, 3.2, 0, 4, 0.5);
+  a.pa(186, 'NICE WIRE', 'hop off half way if you are feeling brave');
+
+  /* — the third crossing — */
+  a.p('parapet', -7.2, 208, 222); a.p('parapet', 7.2, 208, 222);
+  a.row(0, 3.35, 210, 0, 0, 1.3, 6);
+  a.e('pigeon', -0.6, 3.35, 216, { ph: 0.9 });
+  a.e('pigeon', 0.8, 3.35, 216.6, { ph: 2.7 });
+  a.e('pigeon', 1.8, 3.35, 216.2, { ph: 4.4 });
+  a.ac(-4.8, 3.0, 214);
+  a.treat('fish', 0, 3.5, 218);
+  a.awn(4.6, 5.0, 218, 3.6, 2.4, 0xff7a5a);
+  a.zip(0, 221.0, 0, 238.6, 5.0, 2.2, 12.5);
+  a.p('parapet', -7.4, 238, 252); a.p('parapet', 7.4, 238, 252);
+  a.row(0, 1.55, 240, 0, 0, 1.3, 7);
+  a.e('coon', -3.4, 1.2, 244, {});
+  a.p('chimney', 5.6, 246, 2.2);
+  a.check(246, 0);
+
+  /* — DELIVERY DRONE 9000's rooftop, with its recharging pad — */
+  a.p('watertower', 0, 292);
+  a.p('parapet', -8.8, 252, 298); a.p('parapet', 8.8, 252, 298);
+  a.ac(-6.6, 0, 260); a.ac(6.6, 0, 260);
+  a.ant(-7.8, 0, 268); a.ant(7.8, 0, 268);
+  a.crate(-5.2, 0, 264, 0.66); a.crate(5.2, 0, 264, 0.66);
+  a.crate(-7.2, 0, 286, 0.62); a.crate(7.4, 0, 284, 0.62);
+  a.p('dumpster', -6.4, 278, 0);
+  a.box(0, 0.22, 281, 5.0, 0.44, 5.0, P.craneA);        // the landing pad
+  a.box(0, 0.46, 281, 3.4, 0.06, 3.4, P.signA);
+  a.kite(-10.0, 24.0, 262, 0xffd24a);
+  a.kite(10.5, 27.0, 274, 0x5fd0ff);
+  a.row(0, 0.35, 256, 0, 0, 1.3, 7);
+  a.boss(272, 'drone');
+  a.end(294);
+  return { id: 'l6', name: 'SKYLINE SWING', sub: 'rooftops · ziplines · cranes',
+    theme: 'sky', pal: PAL_SKY, far: 'cityday', seed: 6606, len: 294, boss: 'drone',
+    path: [TURN(1, 58, 76), TURN(1, 152, 170)],
+    chunks: a.C };
+}
+
+/* ══════════════════ ROMP 7 — DREAMLAND DELUXE ══════════════════════
+   THE FINALE (LEVELS2 §B).  The cat curls up on the romp-1 couch and wakes
+   in a pastel sky-void: floating cushion islands, giant yarn-ball planets
+   that roll, fish that swim through the air, a dream sprinkler raining
+   stars, a ghost-white vacuum, one zipline between cushion clouds, vents of
+   sparkles — and gravity at ×0.8, THIS LEVEL ONLY (a sim constant, LAW).  */
+const DREAM_PADS = {
+  /* the LEVEL owns the pads; THE CUCUMBER KING only plants cucumbers on
+     them.  Rank A is the arena floor itself.  Every rank is offset so that a
+     launch column is never blocked by the pad above it (a cat who smacks his
+     head on the underside of the next step is not a boss fight). */
+  a: [[0, 4.0, 238], [-5.0, 4.0, 250], [5.0, 4.0, 250], [-3.0, 4.0, 232], [3.0, 4.0, 232]],
+  b: [[-5.2, 7.2, 238], [5.2, 7.2, 238], [0, 7.2, 252]],
+  /* LAW, found in the shot pass: NOTHING STANDABLE MAY HANG OVER THE CAMERA'S
+     BOOM LINE.  Rank C originally had a pad at (0, 10, 233) — dead centre,
+     2–5 m in front of an arena camera that sits at y≈8.4, z≈cat−11 — and its
+     dark underside filled the top third of every frame of the fight.  Rank C
+     is pushed out to the sides and forward instead. */
+  c: [[-6.8, 10.0, 236], [6.8, 10.0, 236], [-4.0, 10.0, 246], [4.0, 10.0, 246]],
+  platX: 0, platZ: 244,
+  /* three heights, each comfortably inside the launch apex from the rank
+     below it (CUKE_V 16 m/s at gravity 26×0.8 = 6.15 m of rise), and low
+     enough that the arena camera can hold the crown in frame */
+  platY: [7.4, 9.4, 11.4],
+};
+function lvlDream() {
+  const a = A();
+  const P = PAL_DREAM;
+  a.corr(-10, 54, 6.0);
+  a.corr(54, 72, 6.0);                        // CORNER 1 (right)
+  a.corr(72, 150, 6.0);
+  a.corr(150, 168, 6.0);                      // CORNER 2 (right)
+  a.corr(168, 212, 6.2);
+  a.corr(212, 276, 9.6);                      // the throne room
+  a.floor(-8, 12, 0, 11.6);
+  a.floor(16, 28, 0.9, 10.8);                 // GAP 12–16
+  a.floor(32, 44, 1.8, 10.8);                 // GAP 28–32
+  a.floor(48, 72, 1.8, 12.0);                 // GAP 44–48 ; CORNER 1 inside
+  a.floor(72, 84, 1.8, 11.6);
+  /*        ── the yarn planets roll across the gap, 84 to 96 ── */
+  a.floor(96, 108, 2.6, 11.6);
+  /*        ── GAP 108–116 ── */
+  a.floor(116, 128, 2.6, 12.0);               // the sparkle-vent base
+  /*        ── the vent lift, 128 to 132 ── */
+  a.floor(132, 168, 7.4, 12.0);               // CORNER 2 inside
+  a.floor(168, 182, 7.4, 11.6);
+  /*        ── the zipline between the cushion clouds, 182 to 192 ── */
+  a.floor(192, 212, 5.6, 12.0);
+  a.floor(212, 276, 4.0, 19.0);               // the throne room
+  a.walls(-8, 276, 0, 0, 'open');             // a sky-void: no walls at all
+
+  /* — THE INTRO BEAT: the romp-1 couch and the romp-1 rug, adrift in the
+     dream.  The couch stood at z=−4 in the first pass, which is precisely
+     where the camera boom sits at spawn — so the beat the design names by
+     name was on screen for nobody.  It is beside the opening cushion now,
+     and the intro card carries the line (`intro:` on the level record). — */
+  a.p('couch', -4.2, 5, 0);
+  a.p('rug', 0, 1, 6.5, 5.0);
+  a.cloud(-6.2, 2.8, -2, 2.6); a.cloud(5.6, 2.6, 2, 2.8);
+  a.pa(2, 'GOOD NIGHT', 'the cat is dreaming now');
+  a.row(0, 0.35, 4, 0, 0, 1.3, 7);
+  a.isle(0, 2, 11.6, 20, 0);
+  a.e('flit', -3.4, 1.4, 8, { look: 'fish', ph: 0.4, rng: 2.8 });
+  a.e('flit', -2.6, 1.9, 9, { look: 'fish', ph: 1.7, rng: 2.4 });
+  a.e('flit', -3.8, 2.4, 10, { look: 'fish', ph: 3.1, rng: 3.0 });
+  a.treat('fish', 0, 0.5, 10);
+
+  /* — the cushion hops — */
+  a.isle(0, 22, 10.8, 12, 0.9);
+  a.arc(-1.2, 1.2, 13.0, 2.4, 2.6, 5, 1.0);
+  a.e('vac', 0, 0.9, 20, { rng: 3.2, look: 'ghost' });
+  a.row(0, 1.25, 17, 0, 0, 1.2, 6);
+  a.cloud(-6.4, 3.4, 20, 3.2); a.cloud(6.6, 3.0, 26, 3.0);
+  a.e('cuke', 2.8, 0.9, 24, {});               // the launch, remembered from L1
+  a.box(3.6, 4.10, 27.6, 3.4, 0.24, 3.0, P.cush3);
+  a.treat('fish', 3.6, 4.45, 27.6);
+  a.arc(2.8, 2.1, 24.6, 0.8, 3.0, 5, 1.7);
+  a.isle(0, 38, 10.8, 12, 1.8);
+  a.arc(-1.0, 2.1, 29.0, 2.2, 2.6, 5, 1.0);
+  a.e('sprk', 0, 1.8, 36, { per: 2.6, look: 'star' });   // the dream sprinkler
+  a.e('crow', -3.6, 4.2, 40, {});
+  a.row(0, 2.15, 34, 0, 0, 1.3, 7);
+  a.e('flit', 3.6, 3.0, 40, { look: 'fish', ph: 2.2, rng: 2.6 });
+  a.check(40, 0);
+  a.arc(-1.0, 2.1, 45.0, 2.0, 2.6, 5, 1.0);
+  a.isle(0, 60, 12.0, 24, 1.8);
+  a.cloud(-7.0, 4.0, 50, 3.4);
+
+  /* — CORNER 1: light.  A cloud, an arc, one slow ghost vacuum. — */
+  a.arc(0, 2.3, 56, 0, 12.0, 9, 1.0);
+  a.e('vac', 0, 1.8, 63, { rng: 2.6, look: 'ghost' });
+  a.cloud(7.0, 4.4, 64, 3.0);
+  a.e('flit', -4.2, 3.4, 66, { look: 'bfly', ph: 1.1, rng: 2.4 });
+
+  /* — the YARN PLANET hop — */
+  a.isle(0, 78, 11.6, 12, 1.8);
+  a.row(0, 2.15, 74, 0, 0, 1.3, 6);
+  a.e('cuke', -2.6, 1.8, 80, {});
+  a.mover(0, 1.4, 88, 2.4, 3.2, 2.4, 'x', 3.4, 5.0, P.yarn1, 'yarn');
+  a.mover(0, 1.4, 93, 2.2, 2.8, 2.2, 'x', 3.0, 4.2, P.yarn1, 'yarn');
+  a.arc(-3.0, 3.6, 86, 6.0, 8.0, 8, 1.2);
+  a.cloud(-7.2, 2.0, 88, 3.6); a.cloud(7.4, 1.6, 92, 3.4);
+  a.isle(0, 102, 11.6, 12, 2.6);
+  a.e('sprk', 0, 2.6, 100, { per: 2.2, look: 'star' });
+  a.e('crow', 3.4, 5.2, 104, {});
+  a.row(0, 2.95, 98, 0, 0, 1.2, 6);
+  a.treat('fish', 0, 3.1, 106);
+  /* GOLDEN MOUSE 1 — out on a lone cushion over the void, past the planets */
+  a.box(-5.4, 3.20, 92, 3.0, 0.30, 3.0, P.cush1);
+  a.mouse(-5.4, 3.95, 92);
+  a.arc(-3.4, 3.8, 90, -2.0, 2.0, 4, 0.6);
+
+  /* — the SPARKLE-VENT CLIMB — */
+  a.isle(0, 122, 12.0, 12, 2.6);
+  a.arc(-1.0, 2.9, 109.0, 2.0, 5.0, 6, 1.2);
+  a.vent(-3.2, 121, 2.4, 6.2, 2.6, 6.0, 'sparkle');   // the tutorial puff
+  a.box(-3.2, 5.60, 124.0, 3.0, 0.24, 3.0, P.cush3);
+  a.row(-3.2, 6.05, 124, 0, 0, 1.2, 4);
+  a.vent(0, 130, 3.0, 7.4, 2.6, 9.6, 'sparkle');      // the real climb
+  a.arc(0, 3.4, 127, 0, 2.0, 4, 3.8);
+  a.cloud(-6.8, 5.4, 128, 3.2); a.cloud(6.8, 6.2, 132, 3.0);
+  a.isle(0, 150, 12.0, 36, 7.4);
+  /* GOLDEN MOUSE 3 — a lone cushion OFF the island, out over the void: only a
+     floaty double jump (this is the ×0.8-gravity level) reaches it */
+  a.box(8.6, 9.25, 138, 3.0, 0.30, 3.0, P.cush2);
+  a.mouse(8.6, 10.0, 138);
+  a.arc(6.0, 8.4, 138, 2.6, 0, 4, 0.8);
+  a.row(0, 7.75, 136, 0, 0, 1.3, 7);
+  a.e('vac', 0, 7.4, 142, { rng: 3.4, look: 'ghost' });
+  a.treat('milk', 0, 8.0, 146);                       // ZOOMIES in the clouds
+  a.check(140, 0);
+
+  /* — CORNER 2 — */
+  a.arc(0, 7.9, 154, 0, 12.0, 9, 1.0);
+  a.e('vac', 0, 7.4, 161, { rng: 2.4, look: 'ghost' });
+  a.cloud(-7.2, 10.0, 160, 3.4);
+  a.e('flit', 4.0, 9.0, 164, { look: 'fish', ph: 0.7, rng: 2.6 });
+
+  /* — the throne approach — */
+  a.isle(0, 176, 11.6, 16, 7.4);
+  a.e('sprk', -1.0, 7.4, 172, { per: 1.9, look: 'star' });
+  a.e('crow', 3.6, 10.8, 176, {});
+  a.row(0, 7.75, 170, 0, 0, 1.3, 7);
+  a.e('cuke', 3.0, 7.4, 178, {});
+  a.box(4.2, 13.5, 180.6, 3.0, 0.24, 3.0, P.cush3);
+  a.treat('fish', 4.2, 13.85, 180.6);
+  a.arc(3.0, 8.6, 178.6, 1.2, 2.6, 5, 2.2);
+  a.cloud(-6.6, 9.2, 184, 3.6); a.cloud(6.8, 9.6, 188, 3.4);
+  /* the ZIPLINE between the cushion clouds */
+  a.zip(0, 181.0, 0, 192.6, 9.4, 6.4, 10.0);
+  a.isle(0, 202, 12.0, 20, 5.6);
+  a.row(0, 5.95, 194, 0, 0, 1.3, 7);
+  a.e('vac', 0, 5.6, 200, { rng: 3.0, look: 'ghost' });
+  a.e('sprk', 0, 5.6, 206, { per: 1.7, look: 'star' });
+  /* GOLDEN MOUSE 2 — a cushion off to the side of the approach */
+  a.box(5.2, 7.30, 198, 3.0, 0.30, 3.0, P.cush1);
+  a.mouse(5.2, 8.05, 198);
+  a.arc(3.0, 6.4, 196, 2.2, 2.0, 4, 1.0);
+  a.treat('fish', 0, 5.7, 208);
+  a.check(208, 0);
+
+  /* — THE CUCUMBER KING's throne room — */
+  a.isle(0, 244, 19.0, 64, 4.0);
+  a.column(-8.4, 226, 5.0); a.column(8.4, 226, 5.0);
+  a.column(-8.4, 262, 5.0); a.column(8.4, 262, 5.0);
+  a.cloud(-9.6, 8.0, 234, 4.0); a.cloud(9.8, 8.4, 252, 4.2);
+  a.cloud(-9.2, 13.0, 254, 3.6); a.cloud(9.4, 12.4, 232, 3.4);
+  /* RANK B and RANK C pads (rank A is the floor).  He plants the cucumbers;
+     the STEPS are level geometry, so the two can never disagree. */
+  for (const p of DREAM_PADS.b) a.box(p[0], p[1] - 0.2, p[2], 3.4, 0.4, 3.4, P.cush1);
+  for (const p of DREAM_PADS.c) a.box(p[0], p[1] - 0.2, p[2], 3.2, 0.4, 3.2, P.cush3);
+  a.row(0, 4.35, 218, 0, 0, 1.3, 7);
+  a.arc(-4.0, 4.5, 228, 8.0, 6.0, 8, 1.4);
+  /* the school swims ACROSS the far end of the throne room, never beside the
+     arena camera: a 2× fish 3 m from the lens is a blue boulder in the corner
+     of the frame (shot 66, first pass) */
+  a.e('flit', -7.4, 8.4, 254, { look: 'fish', ph: 1.4, rng: 2.6 });
+  a.e('flit', 7.6, 9.0, 258, { look: 'fish', ph: 2.9, rng: 2.4 });
+  a.treat('fish', 0, 4.5, 220);
+  a.boss(238, 'cuke');
+  a.end(268);
+  return { id: 'l7', name: 'DREAMLAND DELUXE', sub: 'cushions · yarn planets · the throne',
+    /* the beat the design asks for, on the curtain the level builds behind */
+    intro: 'the cat curls up on the couch… and wakes somewhere else',
+    theme: 'dream', pal: PAL_DREAM, far: 'none', seed: 7707, len: 268, boss: 'cuke',
+    /* LAW (LEVELS2 §B): jump gravity ×0.8 in THIS LEVEL ONLY, and it is a sim
+       constant read once per level — the harness asserts it resets elsewhere */
+    gravK: 0.8,
+    kingPads: DREAM_PADS,
+    path: [TURN(1, 54, 72), TURN(1, 150, 168)],
+    chunks: a.C };
+}
+
+const LEVELS = [lvlHouse(), lvlYard(), lvlNight(), lvlMarket(), lvlGreen(), lvlSky(), lvlDream()];
 
 /* ═══════════════════ the build driver ══════════════════════════════════
    Walks the chunk data once, emits geometry into per-band MDs, then merges
@@ -594,6 +1564,27 @@ let BOSS_SPEC = null;
 
 function emitFloor(o, pal) {
   const hw = o.w / 2, xc = o.xc || 0;
+  if (o.pat) {
+    /* a TILED floor (romp 4's market): square tiles in a checker, which is
+       what a supermarket floor actually is — and inside a corner the rows
+       bend with the aisle because every vertex goes through trackToWorld. */
+    const tw = o.pat === 'ice' ? 2.05 : 1.63;
+    const nx = Math.max(1, Math.round(o.w / tw)), sx = o.w / nx;
+    const nz = Math.max(1, Math.round((o.z1 - o.z0) / tw)), sz = (o.z1 - o.z0) / nz;
+    const cA = o.pat === 'ice' ? pal.ice : pal.floorA;
+    const cB = o.pat === 'ice' ? pal.iceD : pal.floorB;
+    for (let i = 0; i < nx; i++) {
+      const x0 = xc - hw + i * sx;
+      for (let j = 0; j < nz; j++) {
+        const z0 = o.z0 + j * sz;
+        const r = _rnd();
+        /* edge to edge, ONE plane: a grout line at a different height is a
+           depth-precision flicker waiting to happen 100 m down the aisle */
+        const c = ((i + j) & 1) ? cB : (r < 0.16 ? pal.floorC : cA);
+        FLOORQ(x0, z0, x0 + sx, z0 + sz, o.y, c);
+      }
+    }
+  } else {
   const strip = 0.62;
   const n = Math.max(1, Math.round(o.w / strip));
   const segZ = 3.4;
@@ -606,6 +1597,7 @@ function emitFloor(o, pal) {
       FLOORQ(x0, z, x1, z1, o.y, c);
     }
   }
+  }
   /* The cut EDGE is what makes a gap read as a gap.  Without a skirt the
      hole in the floor just shows the pale void plane and a kid walks
      straight into it — so every slab gets a 1.2 m dark fascia all round. */
@@ -617,10 +1609,17 @@ function emitFloor(o, pal) {
     pushTri(md, xc - hw, o.y, zz, xc + hw, yb, zz, xc - hw, yb, zz, ec);
     void f;
   }
+  /* the long side fascia: ONE quad per side is a straight chord, which on a
+     turning level cuts clean through the inside of the bend.  Subdivide it
+     (only when the level actually turns) so it follows the arc. */
+  const step = TW.on ? 2.0 : (o.z1 - o.z0);
   for (const xx of [xc - hw, xc + hw]) {
     const mdz = bandMD((o.z0 + o.z1) / 2);
-    pushTri(mdz, xx, o.y, o.z0, xx, o.y, o.z1, xx, yb, o.z1, ec);
-    pushTri(mdz, xx, o.y, o.z0, xx, yb, o.z1, xx, yb, o.z0, ec);
+    for (let z = o.z0; z < o.z1 - 0.001; z += step) {
+      const z1 = Math.min(o.z1, z + step);
+      pushTri(mdz, xx, o.y, z, xx, o.y, z1, xx, yb, z1, ec);
+      pushTri(mdz, xx, o.y, z, xx, yb, z1, xx, yb, z, ec);
+    }
   }
   /* one thick solid under the whole slab: the cat lands on y, and falling
      off the side is a real fall (checkpoint respawn, one heart) */
@@ -628,22 +1627,65 @@ function emitFloor(o, pal) {
 }
 function emitWalls(o, pal) {
   if (o.style === 'open' || o.style === 'roof' || o.hw <= 0) return;
+  /* on a turning level the wall is emitted in SHORTER chunks so the bend
+     reads as a bend instead of as four flat panels (each chunk is a box,
+     and a box is mapped corner by corner) */
+  const wstep = TW.on ? 2 : 4;
+  const cstep = TW.on ? 4 : 8;
   for (const s of [-1, 1]) {
     const x = s * (o.hw + 0.35);
-    for (let z = o.z0; z < o.z1; z += 4) {
-      const z1 = Math.min(o.z1, z + 4);
-      G(x, o.h / 2, (z + z1) / 2, 0.7, o.h, z1 - z, pal.wall);
-      G(x - s * 0.34, 0.46, (z + z1) / 2, 0.06, 0.92, z1 - z, pal.wallLow);
-      G(x - s * 0.34, 0.95, (z + z1) / 2, 0.13, 0.12, z1 - z, pal.trim);
+    for (let z = o.z0; z < o.z1; z += wstep) {
+      const z1 = Math.min(o.z1, z + wstep);
+      if (o.style === 'glass') {
+        /* A GREENHOUSE WALL (romp 5): a white frame grid with ONE emissive
+           pane behind it.  The pane is the LIGHT SOURCE of the level — a
+           Lambert glass wall lit by a sun that is itself outside the glass
+           came out as a grey shed, which is the exact market-ceiling mistake
+           one room over (§emitWalls, romp 4).
+           COST: the first pass emitted a rib AND a pane every 1.9 m of height,
+           which put 47k tris in view at z=0 in a 16 m room.  One full-height
+           pane plus a rib every 3.2 m is 2.2× cheaper and looks the same. */
+        G(x, o.h / 2, (z + z1) / 2, 0.24, o.h, 0.18, pal.glassFrame);
+        GE(x - s * 0.04, (o.h + 1.0) / 2, (z + z1) / 2, 0.06,
+          Math.max(0.4, o.h - 1.0), (z1 - z) - 0.22, pal.glass);
+        for (let yy = 1.2; yy < o.h - 0.5; yy += 3.2)
+          G(x, yy, (z + z1) / 2, 0.22, 0.16, z1 - z, pal.glassFrame);
+        G(x - s * 0.30, 0.40, (z + z1) / 2, 0.10, 0.80, z1 - z, pal.terraD);  // brick kick
+      } else {
+        G(x, o.h / 2, (z + z1) / 2, 0.7, o.h, z1 - z, pal.wall);
+        G(x - s * 0.34, 0.46, (z + z1) / 2, 0.06, 0.92, z1 - z, pal.wallLow);
+        G(x - s * 0.34, 0.95, (z + z1) / 2, 0.13, 0.12, z1 - z, pal.trim);
+      }
     }
     S(x, o.h / 2, (o.z0 + o.z1) / 2, 0.7, o.h, o.z1 - o.z0, 'solid');
   }
   /* the interior ceiling — one slab, emitted ONCE (not per side) */
   if (o.style !== 'porch') {
     WORLD.ceil.push({ z0: o.z0, z1: o.z1, h: o.h });
-    for (let z = o.z0; z < o.z1; z += 8) {
-      const z1 = Math.min(o.z1, z + 8);
-      G(0, o.h + 0.18, (z + z1) / 2, o.hw * 2 + 1.4, 0.36, z1 - z, pal.trim);
+    for (let z = o.z0; z < o.z1; z += cstep) {
+      const z1 = Math.min(o.z1, z + cstep);
+      /* the market is lit BY its ceiling.  A Lambert ceiling is lit from
+         ABOVE, so its underside — the only face you ever see — comes out as
+         a gloomy slab; the whole level then reads as a warehouse basement.
+         Emit the market ceiling UNLIT (GE) and hang emissive battens off it:
+         bright, flat, fluorescent, and free (no glow sprites spent). */
+      if (o.style === 'market') {
+        GE(0, o.h + 0.18, (z + z1) / 2, o.hw * 2 + 1.4, 0.36, z1 - z, pal.panel);
+        for (const sx of [-0.52, 0.52]) {
+          GE(sx * o.hw, o.h - 0.02, (z + z1) / 2, 0.92, 0.07, (z1 - z) * 0.74, 0xffffff);
+          G(sx * o.hw, o.h + 0.06, (z + z1) / 2, 1.10, 0.13, (z1 - z) * 0.78, pal.shelfD);
+        }
+      } else if (o.style === 'glass') {
+        /* the roof: bright emissive panes between dark ribs, so the room is lit
+           from above by the sky it is made of */
+        GE(0, o.h + 0.16, (z + z1) / 2, o.hw * 2 + 0.9, 0.10, (z1 - z) - 0.5, pal.glass);
+        G(0, o.h + 0.30, (z + z1) / 2, o.hw * 2 + 1.4, 0.20, 0.30, pal.glassFrame);
+        G(0, o.h + 0.34, (z + z1) / 2, 0.30, 0.28, z1 - z, pal.glassFrame);
+        for (const sx of [-0.55, 0.55])
+          G(sx * o.hw, o.h + 0.28, (z + z1) / 2, 0.22, 0.20, z1 - z, pal.glassFrame);
+      } else {
+        G(0, o.h + 0.18, (z + z1) / 2, o.hw * 2 + 1.4, 0.36, z1 - z, pal.trim);
+      }
     }
   }
 }
@@ -655,12 +1697,27 @@ function dispatchChunk(o, pal, L) {
     case 'box': B(o.x, o.y, o.z, o.sx, o.sy, o.sz, o.col, 0, o.kind || 'solid'); break;
     case 'crate': propCrate(o.x, o.y, o.z, o.s, pal); break;
     case 'mover': {
-      const m = vcMesh([vcBox(o.sx, o.sy, o.sz, o.col)]);
-      m.position.set(o.x, o.y, o.z);
+      let m, g2 = null;
+      if (o.look === 'yarn') {
+        /* a rolling YARN PLANET (romp 7).  The collision box is still a box —
+           the sim never learns about spheres — but the MESH is a ball inside a
+           carrier group, so updateMovers can position the carrier (and yaw it
+           to the route) while the ball rolls inside it. */
+        const r = Math.min(o.sx, o.sz) * 0.5;
+        m = new THREE.Group();
+        g2 = mkYarnBall(r, pal);
+        g2.position.y = -o.sy / 2 + r * 0.02;
+        m.add(g2);
+        if (LOOK && FX.shadow) g2.castShadow = true;
+      } else {
+        m = vcMesh([vcBox(o.sx, o.sy, o.sz, o.col)]);
+      }
+      twFace(m, o.x, o.y, o.z, 0);
       scene.add(m);
       const sol = { x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0, kind: 'floor', on: true,
         cx: o.x, cy: o.y, cz: o.z, sx: o.sx, sy: o.sy, sz: o.sz,
-        mover: true, ax: o.ax, amp: o.amp, per: o.per, bx: o.x, by: o.y, bz: o.z, g: m, vx: 0, vy: 0, vz: 0 };
+        mover: true, ax: o.ax, amp: o.amp, per: o.per, bx: o.x, by: o.y, bz: o.z, g: m, vx: 0, vy: 0, vz: 0,
+        g2, rollR: Math.min(o.sx, o.sz) * 0.5 };
       WORLD.movers.push(sol);
       break;
     }
@@ -692,6 +1749,57 @@ function dispatchChunk(o, pal, L) {
       GLOW(o.x, fy + 1.7, o.z, 3.0, 0xffd75e, 0.5);
       break;
     }
+    /* ── THE BIG OUTSIDE ── */
+    case 'vent': {
+      if (o.art === 'sparkle') propSparkleRing(o.x, o.z, o.r, pal, o.y0);
+      else propGrate(o.x, o.z, o.r, pal, o.y0);
+      WORLD.vents.push({ x: o.x, z: o.z, r: o.r, power: o.power, y0: o.y0, h: o.h });
+      break;
+    }
+    case 'zip': {
+      propZipline(o.x0, o.z0, o.y0, o.x1, o.z1, o.y1, pal);
+      WORLD.zips.push({ x0: o.x0, z0: o.z0, y0: o.y0, x1: o.x1, z1: o.z1, y1: o.y1,
+        sp: o.sp || 0,
+        len: Math.hypot(o.x1 - o.x0, o.y1 - o.y0, o.z1 - o.z0) });
+      break;
+    }
+    case 'slick': {
+      const hw = o.w / 2;
+      const s = addSlick(o.x - hw, o.x + hw, o.z0, o.z1, o.k == null ? 1 : o.k, o.cold);
+      /* the visible sheen — one flat translucent quad, no depth write */
+      const m = makePuddle(o.w, o.z1 - o.z0, pal.iceGlow);
+      m.material.opacity = 0.22;
+      twPos(m, o.x, 0.024, (o.z0 + o.z1) / 2);
+      m.rotation.y = twYaw((o.z0 + o.z1) / 2, 0);
+      s.g = m;
+      break;
+    }
+    case 'shelf2': propShelfUnit(o.x, o.z, o.len, pal); break;
+    case 'endcap': propEndCap(o.x, o.z, pal); break;
+    case 'freez': propFreezer(o.x, o.z, o.len, pal); break;
+    case 'reg': propRegister(o.x, o.z, pal); break;
+    case 'conv': propConvRig(o.x, o.z, o.len, o.w, pal); break;
+    case 'cart': propCart(o.x, o.z, o.ry, pal); break;
+    case 'sign': propSignHang(o.x, o.y, o.z, o.w, o.h, o.hex, pal); break;
+    case 'cone': propCone(o.x, o.z, o.ry, pal); break;
+    case 'doors': propDoors(o.x, o.z, pal); break;
+    case 'pa': WORLD.says.push({ z: o.z, main: o.main, sub: o.sub, said: false }); break;
+    /* ── THE BIG OUTSIDE, part two ── */
+    case 'leaf': propLeafTramp(o.x, o.y, o.z, o.r, pal); break;
+    case 'pots': propPotStack(o.x, o.z, o.n, pal); break;
+    case 'stage': propStage(o.x, o.z, o.len, o.w, o.y, pal); break;
+    case 'fern': propFern(o.x, o.z, o.s, pal); break;
+    case 'palm': propPalm(o.x, o.z, o.h, pal); break;
+    case 'ivy': propVine(o.x, o.y, o.z, o.h, pal); break;
+    case 'bed': propFlowerBed(o.x, o.z, o.len, o.w, pal); break;
+    case 'canopy': propCanopy(o.x, o.y, o.z, o.s, pal); break;
+    case 'tower': propTowerBlock(o.x, o.z, o.w, o.d, o.h, pal); break;
+    case 'crane': propCrane(o.x, o.z, o.h, pal); break;
+    case 'washer': propWasherRig(o.x, o.y, o.z, o.w, pal); break;
+    case 'kite': propKite(o.x, o.y, o.z, o.hex, pal); break;
+    case 'isle': propCushionIsle(o.x, o.z, o.w, o.d, o.y, pal); break;
+    case 'cloud': propCloud(o.x, o.y, o.z, o.s, pal); break;
+    case 'column': propThroneColumn(o.x, o.z, o.h, pal); break;
     case 'bossz': BOSS_SPEC = { z: o.z, k: o.k }; break;
     case 'end': WORLD.length = o.z; break;
     case 'win': propWindow(o.x, o.y, o.z, o.w, o.h, pal); break;
@@ -741,26 +1849,56 @@ function buildLevel(li) {
   clearEntities();
   const L = LEVELS[li];
   WORLD.theme = L.theme; WORLD.pal = L.pal;
+  WORLD.gravK = L.gravK || 1;
+  /* THE CUCUMBER KING's launch ranks live in the LEVEL (the pads are geometry,
+     the cucumbers are his) — hand them to the sim before the boss spawns */
+  WORLD.kingPads = L.kingPads || null;
   _pal = L.pal;
   applyTheme(L.theme);
   _mds = []; _farMD = MD(); _rnd = mkRnd(L.seed);
   BOSS_SPEC = null;
+  /* THE ROUTE (LEVELS2 §A): built BEFORE any geometry, because every vertex
+     pushed below is mapped through it.  No `path` → identity → today's game */
+  twBuild(L);
   for (let i = 0; i < L.chunks.length; i++) dispatchChunk(L.chunks[i], L.pal, L);
   /* the dark nothing under the corridor: every gap now reads as a HOLE
      instead of as a pale patch of sky (2 unlit tris per band) */
   {
-    const vy = L.theme === 'night' ? -11 : -7;
-    const vc = L.theme === 'night' ? 0x100c22 : L.theme === 'yard' ? 0x33301e : 0x2b1d14;
+    /* the void is a THEME property now (THEMES[].voidY / .voidCol, already set
+       by applyTheme above).  The four shipped themes carry exactly the values
+       the old ternary hard-coded, so romps 1–4 are unchanged; romp 6 needs a
+       pale city haze down there and romp 7 needs a deep indigo nothing. */
+    const vy = THEME.voidY == null ? -7 : THEME.voidY;
+    const vc = THEME.voidCol == null ? 0x2b1d14 : THEME.voidCol;
     /* into the FOG-LESS far mesh: fogged, the void washed to the same cream
-       as the sky and a hole in the floor read as solid ground */
-    for (let z = -40; z < L.len + 60; z += BAND) {
-      pushTriRaw(_farMD, -40, vy, z, 40, vy, z, 40, vy, z + BAND, vc);
-      pushTriRaw(_farMD, -40, vy, z, 40, vy, z + BAND, -40, vy, z + BAND, vc);
+       as the sky and a hole in the floor read as solid ground.
+       A TURNING level takes ONE world-space slab over the whole route: the
+       track-space strips would be pushed through the corner pivot and fold
+       into a fan (and the void is a flat plane in every level anyway). */
+    if (TW.on) {
+      const b = twBounds(60);
+      twRaw(true);
+      pushTriRaw(_farMD, b.x0, vy, b.z0, b.x1, vy, b.z0, b.x1, vy, b.z1, vc);
+      pushTriRaw(_farMD, b.x0, vy, b.z0, b.x1, vy, b.z1, b.x0, vy, b.z1, vc);
+      twRaw(false);
+    } else {
+      for (let z = -40; z < L.len + 60; z += BAND) {
+        pushTriRaw(_farMD, -40, vy, z, 40, vy, z, 40, vy, z + BAND, vc);
+        pushTriRaw(_farMD, -40, vy, z, 40, vy, z + BAND, -40, vy, z + BAND, vc);
+      }
     }
   }
-  /* the far backdrop — ONE unlit merged mesh, fog:false */
-  if (L.far === 'city') buildSkyline(L.pal, -60, L.len + 70);
-  else buildFarDay(L.pal, -60, L.len + 70, L.far === 'hill' ? 'hill' : 'house');
+  /* the far backdrop — ONE unlit merged mesh, fog:false.  It is authored in
+     WORLD space (it reaches ±150 m sideways, well outside any corner pivot),
+     so it goes up inside twRaw.  `far:'none'` is an interior: no backdrop. */
+  if (L.far !== 'none') {
+    twRaw(TW.on);
+    if (L.far === 'city') buildSkyline(L.pal, -60, L.len + 70);
+    /* romp 6's DAY skyline is route-aware (it has to be: the level turns) */
+    else if (L.far === 'cityday') buildSkylineDay(L.pal, L.len);
+    else buildFarDay(L.pal, -60, L.len + 70, L.far === 'hill' ? 'hill' : 'house');
+    twRaw(false);
+  }
 
   for (let i = 0; i < _mds.length; i++) {
     if (!_mds[i].p.length) continue;

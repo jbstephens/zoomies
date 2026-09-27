@@ -15,7 +15,11 @@ try {
   await page.nav('http://localhost:8991/index.html');
   await page.waitFor('!!window.__zoomies', 'boot');
 
-  for (let li = 0; li < 3; li++) {
+  // every romp, not just the first three: THE BIG OUTSIDE added four more
+  // opening floors (and romp 7 opens on a floating cushion over a void)
+  const N = (await page.eval('__zoomies.levels()')).length;
+  t.ok(N === 7, `seven romps present (${N})`);
+  for (let li = 0; li < N; li++) {
     await page.eval(`__zoomies.gotoLevel(${li})`);
     const s0 = await page.eval('__zoomies.simTime()');
     await page.eval('__zoomies.step(300)');   // 2.5 sim-seconds, no input
@@ -25,6 +29,11 @@ try {
     const h = await page.eval('__zoomies.hearts()');
     t.ok(p.y > -0.3, `L${li + 1} cat rests ON the first floor after 2.5s idle (y=${p.y.toFixed(2)})`);
     t.ok(h === 3, `L${li + 1} no hearts lost standing at spawn (${h})`);
+    // LEVELS2 §B: the per-level gravity is a SIM CONSTANT, and it has to come
+    // back to 1 on every level that is not the dream
+    const g = (await page.eval('__zoomies.world()')).gravK;
+    t.ok(li === 6 ? g === 0.8 : g === 1,
+      `L${li + 1} gravity scale ${g} (${li === 6 ? 'the dream, ×0.8' : 'unchanged'})`);
   }
 
   // romp 2 (yard, index 1): spawn must rest ON the porch deck (floor top 0.62)

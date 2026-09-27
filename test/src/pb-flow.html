@@ -151,6 +151,128 @@ function drawCardArt(cv, li) {
       c.beginPath(); c.arc(x, H * 0.82, r, 0, TAU); c.fill();
     }
     catGlyph(c, W * 0.55, H * 0.84, 20);
+  } else if (li === 3) {
+    /* MARKET SWEEP: fluorescent ceiling, two shelf runs in perspective, and
+       a very small cat where the mop cannot reach him */
+    let g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#f6faf4'); g.addColorStop(0.62, '#e4ece4'); g.addColorStop(1, '#cfd8d0');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#fffaea';
+    for (let i = 0; i < 3; i++) c.fillRect(W * 0.18 + i * W * 0.24, 5, W * 0.1, 5);
+    const bx = ['#e0553f', '#3f8fd0', '#f2c23c', '#63b85a', '#d86aa8', '#f5893c'];
+    for (const s of [-1, 1]) {
+      for (let r = 0; r < 4; r++) {
+        const t = r / 4;
+        const w = 30 - t * 16, hh = 40 - t * 18;
+        const x = W / 2 + s * (18 + t * 78) - w / 2;
+        c.fillStyle = '#c8d2cc'; c.fillRect(x, H * 0.36 + t * 12, w, hh);
+        for (let k = 0; k < 3; k++) {
+          c.fillStyle = bx[(r * 2 + k + (s > 0 ? 1 : 0)) % 6];
+          c.fillRect(x + 2, H * 0.38 + t * 12 + k * (hh / 3), w - 4, hh / 3 - 3);
+        }
+      }
+    }
+    c.fillStyle = '#dbe2da'; c.fillRect(0, H * 0.74, W, H * 0.26);
+    c.fillStyle = '#eceee6';
+    for (let i = 0; i < 6; i++) c.fillRect(i * W / 6 + 2, H * 0.76, W / 6 - 4, H * 0.1);
+    c.fillStyle = '#f28a2a';
+    c.beginPath(); c.moveTo(W * 0.16, H * 0.94); c.lineTo(W * 0.20, H * 0.78);
+    c.lineTo(W * 0.24, H * 0.94); c.closePath(); c.fill();
+    catGlyph(c, W * 0.62, H * 0.92, 18);
+  } else if (li === 4) {
+    /* GREENHOUSE JUNGLE: glass roof ribs, stacked green tiers, terracotta */
+    let g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#eafff2'); g.addColorStop(0.45, '#cfeccf'); g.addColorStop(1, '#5f9a48');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.strokeStyle = 'rgba(255,255,255,0.85)'; c.lineWidth = 2;
+    for (let i = 0; i < 7; i++) {
+      c.beginPath(); c.moveTo(W / 2, -6); c.lineTo(i * W / 6, H * 0.46); c.stroke();
+    }
+    c.fillStyle = 'rgba(255,255,255,0.5)'; c.fillRect(0, H * 0.44, W, 3);
+    /* three planting tiers in perspective — the level IS the vertical one */
+    for (let t = 0; t < 3; t++) {
+      const y = H * (0.52 + t * 0.15), w = W * (0.52 + t * 0.16);
+      c.fillStyle = ['#b89058', '#a88048', '#8a6a3c'][t];
+      c.fillRect(W / 2 - w / 2, y, w, 7);
+      c.fillStyle = ['#5aa83f', '#4e9a3f', '#3f8030'][t];
+      for (let i = 0; i < 6; i++) {
+        const bx = W / 2 - w / 2 + 6 + i * (w - 12) / 5;
+        c.beginPath(); c.ellipse(bx, y - 5, 9 - t, 7 - t, 0, 0, TAU); c.fill();
+      }
+    }
+    c.fillStyle = '#c87c4a';
+    for (let i = 0; i < 3; i++) c.fillRect(W * 0.08, H * 0.94 - i * 9, 22, 8);
+    /* the queen, up in the glass */
+    c.fillStyle = '#f2c23c';
+    c.beginPath(); c.ellipse(W * 0.80, H * 0.22, 11, 8, 0, 0, TAU); c.fill();
+    c.fillStyle = '#3a2f1a';
+    c.fillRect(W * 0.80 - 3, H * 0.22 - 8, 3, 16);
+    c.fillRect(W * 0.80 + 3, H * 0.22 - 7, 3, 14);
+    c.fillStyle = 'rgba(232,246,255,0.9)';
+    c.beginPath(); c.ellipse(W * 0.80 - 10, H * 0.18, 9, 3, -0.4, 0, TAU); c.fill();
+    catGlyph(c, W * 0.44, H * 0.58, 17);
+  } else if (li === 5) {
+    /* SKYLINE SWING: blue-gold DAY.  Deliberately unmistakable next to romp
+       3's indigo night card — the two live side by side in the grid. */
+    let g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#2f7fd0'); g.addColorStop(0.5, '#8fc8ee'); g.addColorStop(1, '#ffe6b4');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#fff4c0';
+    c.beginPath(); c.arc(W * 0.14, H * 0.20, 12, 0, TAU); c.fill();
+    /* kites */
+    for (const [kx, ky, kc] of [[W * 0.36, H * 0.16, '#ff7a5a'], [W * 0.62, H * 0.10, '#63b85a']]) {
+      c.fillStyle = kc;
+      c.beginPath(); c.moveTo(kx, ky - 7); c.lineTo(kx - 5, ky); c.lineTo(kx, ky + 8); c.lineTo(kx + 5, ky); c.closePath(); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 1;
+      c.beginPath(); c.moveTo(kx, ky + 8); c.lineTo(kx + 6, ky + 20); c.stroke();
+    }
+    /* the towers, pale and hazy behind */
+    const tw = [[10, 0.40, 30], [52, 0.30, 26], [96, 0.46, 34], [160, 0.26, 30], [206, 0.38, 32], [244, 0.46, 30]];
+    for (const [x, ty, w] of tw) {
+      c.fillStyle = '#bcc8d4'; c.fillRect(x, H * ty, w, H);
+      c.fillStyle = '#8fbcd8';
+      for (let r = 0; r < 5; r++) c.fillRect(x + 2, H * ty + 6 + r * 11, w - 4, 4);
+      c.fillStyle = '#ffc86a'; c.fillRect(x, H * ty, w, 3);
+    }
+    /* the ZIPLINE — the star of the level */
+    c.strokeStyle = '#4a4438'; c.lineWidth = 2.5;
+    c.beginPath(); c.moveTo(W * 0.10, H * 0.44); c.lineTo(W * 0.92, H * 0.70); c.stroke();
+    c.fillStyle = '#cfc2a8'; c.fillRect(0, H * 0.84, W, H * 0.16);
+    c.fillStyle = '#d8ccb4'; c.fillRect(0, H * 0.82, W, 5);
+    catGlyph(c, W * 0.50, H * 0.66, 19);
+  } else if (li === 6) {
+    /* DREAMLAND DELUXE: cotton candy over the indigo void */
+    let g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#6f5fc0'); g.addColorStop(0.42, '#c0a0e8'); g.addColorStop(0.78, '#ffc0e0');
+    g.addColorStop(1, '#1c1440');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.fillStyle = 'rgba(255,243,184,0.95)';
+    for (let i = 0; i < 30; i++) {
+      const sx = (i * 61) % W, sy = (i * 29) % (H * 0.6);
+      c.fillRect(sx, sy, 2, 2);
+    }
+    /* cushion islands, floating */
+    for (const [ix, iy, iw] of [[W * 0.14, H * 0.66, 62], [W * 0.54, H * 0.52, 78], [W * 0.86, H * 0.74, 50]]) {
+      c.fillStyle = '#ffc0e0';
+      c.beginPath(); c.ellipse(ix, iy, iw / 2, 9, 0, 0, TAU); c.fill();
+      c.fillStyle = '#c4b0f2';
+      c.beginPath(); c.ellipse(ix, iy + 7, iw / 2.4, 9, 0, 0, TAU); c.fill();
+    }
+    /* a yarn planet */
+    c.fillStyle = '#f28fb0';
+    c.beginPath(); c.arc(W * 0.33, H * 0.30, 17, 0, TAU); c.fill();
+    c.strokeStyle = '#fff0f8'; c.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      c.beginPath(); c.ellipse(W * 0.33, H * 0.30, 17, 6 + i * 3, i * 0.8, 0, TAU); c.stroke();
+    }
+    /* the crown, waiting */
+    c.fillStyle = '#ffd24a';
+    c.beginPath();
+    c.moveTo(W * 0.74, H * 0.36); c.lineTo(W * 0.76, H * 0.26); c.lineTo(W * 0.785, H * 0.33);
+    c.lineTo(W * 0.81, H * 0.24); c.lineTo(W * 0.835, H * 0.33); c.lineTo(W * 0.86, H * 0.26);
+    c.lineTo(W * 0.88, H * 0.36); c.closePath(); c.fill();
+    c.fillStyle = '#7fc24a'; c.fillRect(W * 0.75, H * 0.38, W * 0.12, 7);
+    catGlyph(c, W * 0.54, H * 0.50, 18, '#ffd8a8');
   } else {
     let g = c.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, '#0a0a22'); g.addColorStop(0.6, '#2c2263'); g.addColorStop(1, '#5b3a72');
@@ -186,8 +308,10 @@ function catGlyph(c, x, y, s, col) {
   c.beginPath(); c.moveTo(x - s * 0.48, y - s * 0.28);
   c.quadraticCurveTo(x - s * 0.95, y - s * 0.5, x - s * 0.80, y - s * 0.95); c.stroke();
 }
+const CARD_ROW = 4;                 // cards per row once the grid is compact
 function buildCards() {
   EL.cards.innerHTML = '';
+  EL.cards.className = LEVELS.length > 3 ? 'many' : '';
   for (let i = 0; i < LEVELS.length; i++) {
     const L = LEVELS[i], s = SAVE[L.id], lk = !unlocked(i);
     const d = document.createElement('div');
@@ -241,7 +365,10 @@ function setState(s) {
   if (s === ST.TITLE) {
     const tot = LEVELS.reduce((a, L) => a + SAVE[L.id].mice.filter(Boolean).length, 0);
     const done = LEVELS.filter(L => SAVE[L.id].cleared).length;
-    EL.titleBest.textContent = done ? (done + ' of 3 romps cleared · ' + tot + ' of 9 golden mice') : '';
+    EL.titleBest.textContent = done
+      ? (done + ' of ' + LEVELS.length + ' romps cleared · ' + tot + ' of ' +
+         (LEVELS.length * 3) + ' golden mice')
+      : '';
     ambStop();
   }
   if (s === ST.SELECT) { buildCards(); ambStop(); }
@@ -249,7 +376,9 @@ function setState(s) {
   if (s === ST.PLAY) { ambStart(); hudHearts(); hudKibble(); hudMice(); }
   if (s === ST.RESULTS) { ambStop(); sfxPurrStop(); sfxRollStop(); sfxZoomStop(); }
   if (s === ST.KITTY) { buildParade(); }
-  if (prev === ST.PLAY && s !== ST.PAUSE) { sfxRollStop(); sfxZoomStop(); sfxVacDroneStop(); }
+  if (prev === ST.PLAY && s !== ST.PAUSE) {
+    sfxRollStop(); sfxZoomStop(); sfxVacDroneStop(); sfxDroneWhirStop();
+  }
 }
 
 function startLevel(i) {
@@ -257,7 +386,10 @@ function startLevel(i) {
   const L = LEVELS[curLevel];
   EL.introNum.textContent = 'ROMP ' + (curLevel + 1);
   EL.introNm.textContent = L.name;
-  EL.introSub.textContent = L.sub;
+  /* a level may carry its own INTRO BEAT for the curtain card — romp 7's is
+     the one the design asks for by name: "the cat curls up on the L1 couch…
+     and wakes in the dream" (LEVELS2 §B).  Everything else shows its sub. */
+  EL.introSub.textContent = L.intro || L.sub;
   EL.introGo.textContent = 'GET READY…';
   setState(ST.INTRO);
   introT = 0;
@@ -283,6 +415,12 @@ function resetRun() {
   CAT.zoomT = 0; CAT.kibble = 0; CAT.kibSince = 0;
   CAT.mice[0] = CAT.mice[1] = CAT.mice[2] = false;
   CAT.idleT = 0; CAT.idleStage = 0; CAT.jumps = 0; CAT.grounded = true;
+  /* the new verbs reset with the run — and CAT.onZip MUST be dropped here:
+     clearWorld() throws the old level's zip records away, and a stale one
+     left hanging would be driven by the sim on the next tick */
+  CAT.onZip = null; CAT.zipT = 0; CAT.zipCD = 0; CAT.zipRides = 0;
+  CAT.ventT = 0; CAT.ventRides = 0; CAT.moverT = 0; CAT.moverRides = 0;
+  CAT.slickT = 0; CAT.breathT = 0;
   CAT.cp.x = 0; CAT.cp.y = CAT.y - 0.05; CAT.cp.z = 0;
   CAT.bestZ = 0; CAT.deaths = 0; CAT.jumpsMade = 0; CAT.cukeLaunches = 0;
   resetIdleFlags();
@@ -326,11 +464,20 @@ function levelCleared() {
 }
 function buildParade() {
   const tot = LEVELS.reduce((a, L) => a + SAVE[L.id].mice.filter(Boolean).length, 0);
+  const n = Math.max(1, tot);
+  /* SEVEN romps means the finale parade can be TWENTY-ONE mice (LEVELS2 §B),
+     and 21 × 96 px is more than twice the 900 px stage.  Spacing and mouse
+     size scale with the count, so every mouse the boys ever found is in the
+     parade; at three or fewer the numbers come out exactly as they were. */
+  const size = n > 12 ? 40 : n > 7 ? 56 : 74;
+  const gap = Math.max(26, Math.min(96, Math.floor((900 - size) / n)));
   let h = '';
-  for (let i = 0; i < Math.max(1, tot); i++)
-    h += '<span class="ms" style="left:' + (i * 96) + 'px" data-i="' + i + '">' + MOUSE_SVG('got') + '</span>';
+  for (let i = 0; i < n; i++)
+    h += '<span class="ms" style="left:' + (i * gap) + 'px;width:' + size + 'px;height:' + size +
+      'px" data-i="' + i + '">' + MOUSE_SVG('got') + '</span>';
   EL.parade.innerHTML = h;
-  EL.parade._n = Math.max(1, tot);
+  EL.parade._n = n;
+  EL.parade._gap = gap;
   EL.parade._t = 0;
 }
 
@@ -467,6 +614,13 @@ function menuTick(dt) {
   if (STATE === ST.SELECT) {
     if (EDGE.left) { selIdx = (selIdx + LEVELS.length - 1) % LEVELS.length; sfxKibble(); refreshCards(); }
     if (EDGE.right) { selIdx = (selIdx + 1) % LEVELS.length; sfxKibble(); refreshCards(); }
+    /* once the grid wraps, up/down walk the rows — every card stays
+       reachable by pad alone (house law) */
+    if (LEVELS.length > CARD_ROW && (EDGE.up || EDGE.down)) {
+      const d = EDGE.down ? CARD_ROW : -CARD_ROW;
+      selIdx = (selIdx + d + LEVELS.length * 2) % LEVELS.length;
+      sfxKibble(); refreshCards();
+    }
     if (EDGE.confirm) {
       if (unlocked(selIdx)) { sfxChime(1.1); startLevel(selIdx); }
       else { sfxHurt(); hint('CLEAR ROMP ' + selIdx + ' FIRST', 2.5); }
@@ -506,12 +660,14 @@ function menuTick(dt) {
   if (STATE === ST.KITTY) {
     EL.parade._t = (EL.parade._t || 0) + dt;
     const n = EL.parade._n || 1;
+    const gap = EL.parade._gap || 96;
     const kids = EL.parade.children;
     for (let i = 0; i < kids.length; i++) {
-      const x = ((EL.parade._t * 90 + i * 96) % (900 + 96)) - 96;
+      const x = ((EL.parade._t * 90 + i * gap) % (900 + gap)) - gap;
       kids[i].style.left = x + 'px';
       kids[i].style.top = (11 + Math.sin(EL.parade._t * 3 + i) * 7) + 'px';
     }
+    void n;
     if (EDGE.confirm || EDGE.start || EDGE.back) setState(ST.SELECT);
     return;
   }
@@ -571,6 +727,26 @@ function drawGlows() {
       if (B.st === 4) glowAdd(B.x, B.y + 1.7, B.z, 3.6, 1.0, 0.30, 0.20);
     } else if (B.k === 'rex') {
       if (B.st === 3) glowAdd(B.noseX, B.noseY + 0.2, B.noseZ, 2.3, 1.0, 0.55, 0.55);
+    } else if (B.k === 'mop') {
+      /* the tell: the mop glows while it winds up, and he glows cool and
+         invitingly once he is flat on his back */
+      if (B.st === 1 || B.st === 2) glowAdd(B.x, B.y + 1.0, B.z, 4.6, 1.0, 0.86, 0.42);
+      if (B.st === 4) glowAdd(B.x, B.y + 0.9, B.z, 4.0, 0.62, 0.92, 1.0);
+    } else if (B.k === 'bee') {
+      /* she is always warm-lit up there (she is the light in the greenhouse),
+         and the drone wave glows harder so the breather reads as a wave */
+      glowAdd(B.x, B.y + 0.2, B.z, 3.2, 1.0, 0.82, 0.30);
+      if (B.st === 2) glowAdd(B.x, B.y - 0.9, B.z, 4.6, 1.0, 0.74, 0.24);
+    } else if (B.k === 'drone') {
+      if (B.st === 1 || B.st === 2) glowAdd(B.x, B.y, B.z, 5.2, 1.0, 0.38, 0.24);
+      /* on the pad it glows cool and invitingly — the pounce window */
+      if (B.st === 4) glowAdd(B.x, B.y + 0.7, B.z, 4.4, 0.55, 0.92, 1.0);
+      if (B.st === 3) glowAdd(B.x, B.y + 0.4, B.z, 2.6, 0.9, 0.9, 0.55);
+    } else if (B.k === 'cuke') {
+      /* THE CROWN is the target and nothing else is, so the crown is what
+         glows — the whole fight is legible from the tell alone */
+      glowAdd(B.x, B.platY + 3.7, B.z, 4.2, 1.0, 0.86, 0.36);
+      glowAdd(B.x, B.platY + 0.4, B.z, 2.6, 0.72, 0.92, 0.48);
     } else {
       glowAdd(B.x, B.y + 2.1, B.z, 2.5, 1.0, 0.82, 0.36);
     }
@@ -594,8 +770,14 @@ function updateVisuals(dt, now) {
     const c = WORLD.checkpoints[i];
     if (c.g) c.g.visible = c.z > CAT.z - 20 && c.z < CAT.z + far;
   }
-  if (skyDome) skyDome.position.set(CAT.x * 0.2, 0, CAT.z);
-  if (starField) starField.position.set(CAT.x * 0.2, 0, CAT.z);
+  /* the dome and the stars ride the cat's WORLD position (on a turning
+     level his track z and his world z are different things) */
+  if (skyDome || starField) {
+    if (TW.on) twMap(CAT.z, CAT.x * 0.2, 0, _tw);
+    else { _tw[0] = CAT.x * 0.2; _tw[1] = 0; _tw[2] = CAT.z; }
+    if (skyDome) skyDome.position.set(_tw[0], 0, _tw[2]);
+    if (starField) starField.position.set(_tw[0], 0, _tw[2]);
+  }
 
   poseCat(dt, now);
   /* Invulnerability NEVER hides the cat.  A blink — at any duty cycle —
@@ -778,6 +960,10 @@ window.__zoomies = {
      alone, so a harness can teleport somewhere and still assert that a
      faint sends him back to the real food bowl. */
   teleport(x, y, z) {
+    /* let go of the wire first: the zip branch owns the cat's position and
+       would snap him straight back onto it (a screenshot run teleported to
+       the freezer and got a cat still dangling in the back aisle) */
+    CAT.onZip = null; CAT.zipCD = 0;
     CAT.x = x; CAT.y = y; CAT.z = z;
     CAT.vx = CAT.vy = CAT.vz = 0;
     camSnap();
@@ -808,13 +994,31 @@ window.__zoomies = {
     hearts: CAT.hearts, invuln: CAT.invuln, zoomT: CAT.zoomT,
     kibble: CAT.kibble, deaths: CAT.deaths, bestZ: CAT.bestZ,
     cukeLaunches: CAT.cukeLaunches, jumpsMade: CAT.jumpsMade,
+    onZip: !!CAT.onZip, zipRides: CAT.zipRides, ventRides: CAT.ventRides,
+    ventT: CAT.ventT, onMover: !!CAT.onMover, moverRides: CAT.moverRides,
+    slick: WORLD.slick.length ? slickAt(CAT.x, CAT.z) : 0,
     cp: { x: CAT.cp.x, y: CAT.cp.y, z: CAT.cp.z },
   }),
   idle: () => ({ t: CAT.idleT, stage: CAT.idleStage, wall: CAT.idleWall,
     fired: idleFired.slice(), anim: cat.idleName || '' }),
   boss: () => BOSS ? { k: BOSS.k, name: BOSS.name, hp: BOSS.hp, alive: BOSS.alive,
     engaged: BOSS.engaged, st: BOSS.st, x: BOSS.x, y: BOSS.y, z: BOSS.z,
-    gateZ: BOSS.gateZ, win: BOSS.winT > 0 } : null,
+    gateZ: BOSS.gateZ, win: BOSS.winT > 0,
+    /* LEVELS2 §B/§D: the harness asserts THE CUCUMBER KING's immunity and
+       drives his launch chain off the live platform height */
+    immune: !!BOSS.immune, phase: BOSS.phase || 0, platY: BOSS.platY || 0,
+    friend: !!BOSS.friend } : null,
+  /* the launch-chain view: where his cucumbers are RIGHT NOW and how high the
+     crown platform has been teleported */
+  king: () => (BOSS && BOSS.k === 'cuke') ? {
+    phase: BOSS.phase, platY: BOSS.platY, x: BOSS.x, z: BOSS.z,
+    immune: !!BOSS.immune, hp: BOSS.hp,
+    cukes: BOSS.pool.filter(e => e.alive).map(e => ({ x: e.x, y: e.y, z: e.z })),
+  } : null,
+  parade: () => ({ n: (EL.parade && EL.parade._n) || 0,
+    cards: EL.parade ? EL.parade.children.length : 0,
+    gap: (EL.parade && EL.parade._gap) || 0 }),
+  gravK: () => WORLD.gravK,
   ents: () => ENTS.map(e => ({ k: e.k, x: e.x, y: e.y, z: e.z, alive: e.alive,
     dead: e.dead, st: e.st, mesm: e.mesm })),
   entCount: k => ENTS.filter(e => e.k === k && e.alive).length,
@@ -860,9 +1064,12 @@ window.__zoomies = {
   },
   hurt() { CAT.invuln = 0; return hurtCat(CAT.x + 1, CAT.z + 1, 5); },
   faint() { CAT.hearts = 1; CAT.invuln = 0; return hurtCat(CAT.x + 1, CAT.z + 1, 5); },
-  /* SCREEN-SPACE assertion hook: the cat's position THROUGH THE LIVE CAMERA */
+  /* SCREEN-SPACE assertion hook: the cat's position THROUGH THE LIVE CAMERA.
+     The cat is a TRACK-space record, so it maps first — on a turning level
+     that is the whole point of the assertion. */
   screen() {
-    const v = new THREE.Vector3(CAT.x, CAT.y + 0.4, CAT.z);
+    twMap(CAT.z, CAT.x, CAT.y + 0.4, _tw);
+    const v = new THREE.Vector3(_tw[0], _tw[1], _tw[2]);
     v.project(camera);
     return { x: v.x, y: v.y, z: v.z, px: (v.x * 0.5 + 0.5) * VW, py: (-v.y * 0.5 + 0.5) * VH };
   },
@@ -872,6 +1079,31 @@ window.__zoomies = {
     v.project(camera);
     return { x: v.x, y: v.y };
   },
+  /* the same projection for a TRACK-space point (x = lateral, z = along) */
+  screenTrack(x, y, z) {
+    twMap(z, x, y, _tw);
+    const v = new THREE.Vector3(_tw[0], _tw[1], _tw[2]);
+    v.project(camera);
+    return { x: v.x, y: v.y };
+  },
+  /* ── the path-turn engine, exposed for the harness (LEVELS2 §A/§D) ── */
+  path: () => ({
+    on: TW.on,
+    segs: TW.segs.map(s => ({ kind: s.k ? 'turn' : 'straight', d0: s.d0, d1: s.d1,
+      dir: s.dir, Rp: s.Rp, heading: s.th, deg: Math.round(s.th * 180 / Math.PI) })),
+    runs: TW.on ? twStraightRuns() : [],
+  }),
+  heading: d => twHeading(d == null ? CAT.z : d),
+  toWorld(x, y, z) { twMap(z, x, y, _tw); return { x: _tw[0], y: _tw[1], z: _tw[2] }; },
+  /* ── the new verbs ── */
+  zip: () => ({ on: !!CAT.onZip, t: CAT.zipT, dir: CAT.zipDir, rides: CAT.zipRides,
+    count: WORLD.zips.length, cd: CAT.zipCD }),
+  vents: () => ({ inside: CAT.ventT > 0, rides: CAT.ventRides, count: WORLD.vents.length }),
+  slick: () => ({ here: WORLD.slick.length ? slickAt(CAT.x, CAT.z) : 0,
+    cold: WORLD.slick.length ? slickCold(CAT.x, CAT.z) : false,
+    count: WORLD.slick.filter(s => s.on).length }),
+  movers: () => ({ on: !!CAT.onMover, rides: CAT.moverRides, count: WORLD.movers.length }),
+  says: () => WORLD.says.map(s => ({ z: s.z, said: s.said, main: s.main })),
   cam: () => ({ x: camera.position.x, y: camera.position.y, z: camera.position.z, fov: camera.fov }),
   perf: () => ({ calls: TL.calls, glCalls: TL.glCalls, tris: TL.tris, fps: TL.fps,
     ms: TL.ms, bakeMs: WORLD.bakeMs, worldTris: WORLD.tris,
@@ -879,7 +1111,8 @@ window.__zoomies = {
     catTris: cat.tris, casters: casterInfo(), glows: glowN,
     sparks: sparks.a.filter(o => o.on).length, bits: bits.a.filter(o => o.on).length,
     solids: WORLD.solids.length, ents: ENTS.length, kibs: KIBS.length }),
-  world: () => ({ theme: WORLD.theme, len: WORLD.length, bands: WORLD.bands.length,
+  world: () => ({ theme: WORLD.theme, len: WORLD.length, gravK: WORLD.gravK,
+    bands: WORLD.bands.length,
     checkpoints: WORLD.checkpoints.map(c => ({ z: c.z, hit: c.hit })),
     movers: WORLD.movers.length, glows: WORLD.glows.length, crates: CRATES.length,
     cratesLeft: CRATES.filter(c => c.on).length, bakeMs: WORLD.bakeMs }),

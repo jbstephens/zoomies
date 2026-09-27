@@ -197,8 +197,10 @@ function poseCat(dt, now) {
   const C = CAT;
   const r = cat.root, b = cat.body;
 
-  r.position.set(C.x, C.y, C.z);
-  r.rotation.y = C.face;
+  /* the cat's sim position is TRACK space; the rig is placed through
+     trackToWorld and his facing picks up the route's heading (LEVELS2 §A) */
+  twPos(r, C.x, C.y, C.z);
+  r.rotation.y = twYaw(C.z, C.face);
   r.visible = true;
 
   /* ── speed-driven run cycle ─────────────────────────────────────── */
@@ -234,6 +236,19 @@ function poseCat(dt, now) {
     legSplay = 0.5; earFlat = 1; eyeSquint = 0.85;
     tailTargetP = 0.1; tailCurl = 0.5;
     headRoll = 0.4;
+  } else if (C.onZip) {
+    /* ZIPLINE: he hangs by the FRONT PAWS, back legs swinging, tail long —
+       without this he rode the wire in a plain standing pose and read as a
+       cat levitating across the back aisle (first shot pass) */
+    const sw = Math.sin(now * 0.004) * 0.12;
+    bodyPitch = -0.62 + sw * 0.25; bodyY = -0.16;
+    sy = 1.10; sx = sz = 0.94;
+    lfl = -1.85 + sw * 0.1; lfr = -1.85 - sw * 0.1;
+    lbl = 0.55 + sw; lbr = 0.66 - sw;
+    legSplay = 0.14;
+    tailTargetP = 1.25; tailTargetY = sw * 1.2; tailStiff = 0.45; tailCurl = 0.15;
+    headPitch = -0.14; earFlat = 0.25; eyeSquint = 0.15;
+    cat.idleName = 'zipline';
   } else if (C.rolling) {
     /* zoomies roll — a cat-shaped ball: legs tucked, ears flat, tail
        wrapped, the whole body spinning forward */
@@ -419,7 +434,7 @@ function poseCat(dt, now) {
 
   /* ── blob shadow: on under lowfx, a faint contact patch otherwise ─── */
   const gy = C.shadowY;
-  cat.blob.position.set(C.x, gy + 0.012, C.z);
+  twPos(cat.blob, C.x, gy + 0.012, C.z);
   const h = Math.max(0, C.y - gy);
   const shrink = clamp(1 - h * 0.16, 0.28, 1);
   cat.blob.scale.set(shrink, shrink, 1);

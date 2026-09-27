@@ -1,0 +1,207 @@
+<script>
+/* ═══════════════════ ZOOMIES! — p5b  the PATH-TURN ENGINE ══════════════
+   LEVELS2.md §A.  The whole trick is that THE SIM NEVER CHANGES: every
+   level still runs in TRACK SPACE (z = distance along the route, x =
+   lateral offset, y = height).  Collision, the corridor solver, bins,
+   groundAt, enemies, bosses, projectiles, checkpoints — all of it stays
+   exactly as it was.  What changes is the MAPPING TO WORLD SPACE:
+
+     · BAKE TIME — every static vertex is authored in track space and
+       pushed through trackToWorld inside pushTri/pushTriRaw before it
+       lands in a merged band mesh.  The world therefore costs ZERO per
+       frame, exactly as before.
+     · PER FRAME — dynamics (cat, entities, boss parts, pickups,
+       particles, glows, blob shadow, laser dot, camera) map their
+       track-space position through the same transform when their
+       Object3D is positioned, and add the segment heading to their
+       facing.  One cached segment lookup, no trig re-derivation.
+
+   A level declares its route as a list of 90° corners:
+
+       path: [ TURN(+1, 84, 102), TURN(+1, 146, 164) ]
+
+   TURN(dir, z0, z1): dir +1 = right, -1 = left; the corner occupies
+   track z ∈ [z0, z1] and the centre line sweeps a quarter circle of
+   pivot radius Rp = (z1 - z0) / (π/2).  The INNER edge radius is
+   Rp − corridor half-width, so an 18 m corner in a 6.2 m-half-width
+   aisle gives the ~5 m inner radius the design asks for.  LAW: 90°
+   multiples only — the world stays axis-aligned.
+
+   A level with NO path is ONE STRAIGHT RUN and every map below is the
+   exact identity (same floats in, same floats out), which is why romps
+   1–3 ship pixel-identical.                                            */
+
+const CORNER_MIN_R = 0.6;        // never let far-out geometry fold through
+                                 // the pivot (a safety net, not a feature)
+
+const TW = {
+  on: false,        // does the CURRENT level turn?
+  segs: [],         // ordered [{k:0 straight | 1 turn, d0, d1, …}]
+  idx: null,        // d → segment index, one 4 m bucket each (O(1) lookup)
+  idxD0: 0,
+  bypass: false,    // push WORLD coordinates verbatim (void plane, far mesh)
+  _s: null,         // locality cache: the last segment we looked up
+};
+/* scratch triples — the per-frame mapper must never allocate (house law) */
+const _tw = [0, 0, 0];
+const _tw2 = [0, 0, 0];
+
+function twStraight(d0, d1, ox, oz, th) {
+  return { k: 0, d0, d1, ox, oz, th, cs: Math.cos(th), sn: Math.sin(th), dir: 0, Rp: 0 };
+}
+function twTurn(dir, d0, d1, ox, oz, th) {
+  return { k: 1, dir, d0, d1, ox, oz, th, cs: Math.cos(th), sn: Math.sin(th),
+    Rp: (d1 - d0) / (Math.PI / 2) };
+}
+/* the level-authoring form.  (Named TURN, not T — pa-audio already owns a
+   global T() for the audio clock, and the later block would win.) */
+function TURN(dir, z0, z1) { return { t: 'turn', dir: dir < 0 ? -1 : 1, z0, z1 }; }
+
+function twClear() {
+  TW.on = false; TW.segs.length = 0; TW.idx = null; TW._s = null; TW.bypass = false;
+}
+
+function twBuild(L) {
+  twClear();
+  const turns = (L.path || [])
+    .filter(p => p && p.t === 'turn' && p.z1 > p.z0)
+    .slice().sort((a, b) => a.z0 - b.z0);
+  if (!turns.length) return false;           // straight level → identity
+  const D0 = -80, D1 = (L.len || 300) + 140;
+  /* (ox, oz) is always the WORLD position of track point (d, off = 0) */
+  let d = D0, ox = 0, oz = D0, th = 0;
+  for (let i = 0; i < turns.length; i++) {
+    const tn = turns[i];
+    const z0 = Math.max(d, tn.z0), z1 = Math.max(z0 + 2, tn.z1);
+    if (z0 > d) {
+      TW.segs.push(twStraight(d, z0, ox, oz, th));
+      const v = z0 - d;
+      ox += v * Math.sin(th); oz += v * Math.cos(th);
+      d = z0;
+    }
+    const sg = twTurn(tn.dir, z0, z1, ox, oz, th);
+    TW.segs.push(sg);
+    /* the exit of the arc (off = 0, φ = π/2) becomes the next origin */
+    const u = sg.dir * sg.Rp, v2 = sg.Rp;
+    const nx = ox + u * sg.cs + v2 * sg.sn;
+    const nz = oz - u * sg.sn + v2 * sg.cs;
+    ox = nx; oz = nz;
+    th += sg.dir * Math.PI / 2;
+    d = z1;
+  }
+  TW.segs.push(twStraight(d, Math.max(d + 2, D1), ox, oz, th));
+  TW.on = true;
+  /* the segment lookup table: a per-frame map is ONE array index plus at
+     most one step either way — the "cached per-band segment lookup" the
+     design asks for, at 4 m granularity. */
+  TW.idxD0 = D0;
+  const n = Math.ceil((D1 - D0) / 4) + 2;
+  TW.idx = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const dd = D0 + i * 4 + 2;
+    let k = 0;
+    for (let s = 0; s < TW.segs.length; s++) if (dd >= TW.segs[s].d0) k = s;
+    TW.idx[i] = k;
+  }
+  return true;
+}
+
+function twSeg(d) {
+  const c = TW._s;
+  if (c && d >= c.d0 && d < c.d1) return c;
+  let i = ((d - TW.idxD0) * 0.25) | 0;
+  if (i < 0) i = 0; else if (i >= TW.idx.length) i = TW.idx.length - 1;
+  let k = TW.idx[i];
+  const S = TW.segs;
+  while (k > 0 && d < S[k].d0) k--;
+  while (k < S.length - 1 && d >= S[k + 1].d0) k++;
+  TW._s = S[k];
+  return S[k];
+}
+
+/* trackToWorld(d, off, y) → out[wx, wy, wz].  Straights are a rigid yaw +
+   translation (so "stick right ⇒ screen right" survives every heading);
+   inside a corner the (d, off) pair rotates about the pivot — the outer
+   edge stretches, the inner pinches, and with chunky baked tiles that is
+   exactly what a corridor bend looks like. */
+function twMap(d, off, y, out) {
+  out = out || _tw;
+  if (!TW.on) { out[0] = off; out[1] = y; out[2] = d; return out; }
+  const s = twSeg(d);
+  let u, v;
+  if (s.k === 0) { u = off; v = d - s.d0; }
+  else {
+    const ph = (d - s.d0) / s.Rp;
+    let rho = s.Rp - s.dir * off;
+    if (rho < CORNER_MIN_R) rho = CORNER_MIN_R;
+    u = s.dir * (s.Rp - rho * Math.cos(ph));
+    v = rho * Math.sin(ph);
+  }
+  out[0] = s.ox + u * s.cs + v * s.sn;
+  out[1] = y;
+  out[2] = s.oz - u * s.sn + v * s.cs;
+  return out;
+}
+/* the route's world yaw at track d (three.js convention: 0 = +Z) */
+function twHeading(d) {
+  if (!TW.on) return 0;
+  const s = twSeg(d);
+  return s.k === 0 ? s.th : s.th + s.dir * (d - s.d0) / s.Rp;
+}
+/* a track-space facing, expressed in world yaw */
+function twYaw(d, face) { return TW.on ? face + twHeading(d) : face; }
+
+/* ── the three per-frame object helpers every dynamic thing goes through ── */
+function twPos(o, x, y, z) {
+  if (!TW.on) { o.position.set(x, y, z); return o; }
+  twMap(z, x, y, _tw);
+  o.position.set(_tw[0], _tw[1], _tw[2]);
+  return o;
+}
+function twFace(o, x, y, z, face) {
+  if (!TW.on) { o.position.set(x, y, z); o.rotation.y = face; return o; }
+  twMap(z, x, y, _tw);
+  o.position.set(_tw[0], _tw[1], _tw[2]);
+  o.rotation.y = face + twHeading(z);
+  return o;
+}
+/* bake-time escape hatch: geometry authored DIRECTLY in world space (the
+   void plane and the far backdrop, which reach ±150 m sideways and would
+   wrap right through a corner pivot). */
+function twRaw(on) { TW.bypass = !!on; }
+
+/* the route's world bounding box (the void plane is sized off this) */
+function twBounds(pad) {
+  pad = pad || 0;
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+  const eat = (d, off) => {
+    twMap(d, off, 0, _tw2);
+    if (_tw2[0] < x0) x0 = _tw2[0];
+    if (_tw2[0] > x1) x1 = _tw2[0];
+    if (_tw2[2] < z0) z0 = _tw2[2];
+    if (_tw2[2] > z1) z1 = _tw2[2];
+  };
+  for (let i = 0; i < TW.segs.length; i++) {
+    const s = TW.segs[i];
+    const n = s.k === 0 ? 2 : 9;
+    for (let j = 0; j <= n; j++) {
+      const d = s.d0 + (s.d1 - s.d0) * (j / n);
+      eat(d, -30); eat(d, 30);
+    }
+  }
+  return { x0: x0 - pad, x1: x1 + pad, z0: z0 - pad, z1: z1 + pad };
+}
+
+/* how many distinct world headings do this level's straight runs use?  The
+   direction-law harness samples one per heading. */
+function twStraightRuns() {
+  const out = [];
+  for (let i = 0; i < TW.segs.length; i++) {
+    const s = TW.segs[i];
+    if (s.k !== 0 || s.d1 - s.d0 < 10) continue;
+    out.push({ d0: s.d0, d1: s.d1, heading: s.th,
+      deg: Math.round(s.th * 180 / Math.PI) });
+  }
+  return out;
+}
+</script>
