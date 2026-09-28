@@ -635,3 +635,169 @@ Corollary for the harness: `__zoomies.bossKill()` runs `levelCleared()`, which
 43.5 s bogus best; `zoomies_best` was restored byte-for-byte from the backup
 taken before the session (l1–l3 intact, l4–l7 absent, romp 7 still unclaimed).
 Never call `bossKill()` on the real console without backing the key up first.
+
+---
+
+# SAVE SLOTS — per-player progress (Tier 2, 2026-09-27)
+
+The two boys share the console and were overwriting each other's save.  This
+adds FOUR independent slots, each keeping the exact per-level record the game
+always wrote, plus a kid-proof pad-only picker and the v1→v2 migration that
+protects their real progress.  The per-frame render/sim hot path is UNTOUCHED
+(Tier 2): all changes are in `pb-flow.html` (flow/UI/save) and `p2-head.html`
+(DOM/CSS).  `node --check` + all anchors green; built file 1,091,096 B.
+
+## Schema
+
+`localStorage['zoomies_save_v2']` =
+`{ activeSlot: 0, slots: [S0, S1, S2, S3] }` (exactly 4 slots).  Each
+`S = { name:"P1" (≤3-glyph tag), color:0-5, used:false, levels:{ l1..l7 } }`.
+The per-level record is unchanged — `{bestKibble,bestTime,mice[3],cleared}` —
+it just lives under `slots[i].levels`.  A fresh slot has `used:false` and
+all-zero levels; `used` flips true the first time real progress is written
+(`levelCleared`).  `SAVE` stays a live reference to
+`slots[activeSlot].levels`, so every existing read/write
+(loadSave/writeSave/unlocked/levelCleared/results) operates on the active slot
+with its signature unchanged.
+
+Six-coat palette (`CAT_COLORS`): 0 TABBY (the shipped orange, index 0), 1 GREY,
+2 SHADOW, 3 CREAM, 4 GINGER, 5 SKY.  Fresh slots take colours 0-3 so the four
+cards are visually distinct before any rename.
+
+## Migration proof (the critical law)
+
+On load, if v2 is absent but the legacy `zoomies_best` exists, the legacy
+object is folded VERBATIM into `slots[0].levels` (bests/mice/cleared preserved
+byte-for-byte; `normLevels` only ADDS missing romps as empty), slot 0 is named
+"P1", marked used, `activeSlot=0`, and v2 is written.  The legacy key is NEVER
+deleted or overwritten — it stays as a backup.  Loading an existing v2 only
+normalises (never re-migrates).  Fresh installs (neither key) get 4 empty slots
+and open the picker before TITLE.
+
+Proven in `slots-check.mjs (b)/(c)` with the boys' real shape (l1–l3 with
+bests/mice/cleared, l4–l7 absent):
+
+| key | BEFORE load | AFTER load |
+|---|---|---|
+| `zoomies_best` | `{l1..l3}` (412/141.5/cleared …) | **UNCHANGED, byte-for-byte** |
+| `zoomies_save_v2` | *(absent)* | written; `slots[0].levels.l1..l3 === legacy`, l4–l7 empty, `slots[0].used=true`, `activeSlot=0` |
+
+A second load with v2 present keeps an edited name/colour and does NOT re-fold
+the legacy data (idempotent).  `clearSave()` and `wipeAllSlots()` never touch
+the legacy backup.
+
+## States / controls added
+
+- **ST.SLOTS** — a 2×2 grid of 4 slot cards (coloured cat avatar + tag +
+  "N/7 romps · M mice" or "NEW GAME").  d-pad/stick edges move the cursor;
+  **✕/South** chooses (sets activeSlot → SELECT); **□/West** opens rename;
+  **△/North** quick-cycles the coat colour; **START / ○/East** backs out.
+  Keyboard equivalents come free (the edge stream is shared).
+- **RENAME reel** — three glyph fields (A–Z 0–9 space) + a colour field.
+  **◀▶** move the focused field, **▲▼** turn the reel / cycle colour,
+  **✕** confirms, **○** cancels.  No text input; every control labelled.
+- **First-ever boot** (fresh install) opens ST.SLOTS before TITLE; returning
+  boots go to TITLE with the last active slot remembered.
+- **TITLE** shows "PLAYER: <tag>" + the coloured cat + "△ SWITCH PLAYER".
+  **LEVEL SELECT** header shows the same active player + "△ SWITCH".  Switch is
+  reachable from both (△/whip edge) without losing progress.
+- **Colour tint is menu-only**: the chosen coat recolours the TITLE / SELECT /
+  slot-card / reel avatars.  The in-game cat model stays the orange tabby and
+  the render path is untouched (house law).
+
+## `__zoomies` harness surface
+
+Added `slots()`, `setSlot(i)`, `slotInfo()`, `renameSlot(i,tag,color)`,
+`colors()`, `wipeAllSlots()`.  `save()` still returns the ACTIVE slot's flat
+levels; `clearSave()` now wipes ONLY the active slot (never the legacy key);
+`forceUnlockAll()` still targets the active slot.  API `version: 2`.
+
+## Suite tallies (all SEQUENTIAL, final build 1,091,096 B)
+
+| suite | result |
+|---|---|
+| `build.sh` (anchors + node --check) | PASS (11 inline blocks) |
+| `test/verify.mjs` | **105/105** — v1 retrofit intact |
+| `test/bot.mjs` | **109/109** |
+| `test/spawn-check.mjs` | **37/37** |
+| `test/turns-check.mjs` | **185/185** |
+| `test/slots-check.mjs` (NEW) | **42/42** |
+| console errors, every suite | 0 |
+| screenshots | `test/shots3/` (40–43), reviewed |
+
+### Retrofit edits (legitimate, non-weakening)
+
+- `verify.mjs` / `bot.mjs` / `turns-check.mjs`: the boot-ready wait now accepts
+  `TITLE || SLOTS` and normalises a fresh→SLOTS boot back to the TITLE
+  baseline the v1 suites assume (one line each).  No assertion changed; the
+  fresh→SLOTS boot itself is covered by `slots-check.mjs (a)`.
+- `turns-check.mjs §4`: the migration seed now `removeItem('zoomies_save_v2')`
+  before `loadSave()` so the v1→v2 fold actually fires (the shared Chrome
+  profile had already written v2 at boot).  Its existing assertions are
+  unchanged and still pass (185/185); the deeper migration proof lives in
+  `slots-check.mjs`.
+- `p2-head.html`: the compact SELECT grid margins/card-height were tightened
+  to make room for the new active-player line while keeping 4 + 3 + head +
+  player + foot on 720p (turns-check asserts foot bottom ≤722; now 716).
+
+## slots-check.mjs coverage (42 assertions, pad-driven + localStorage-asserted)
+
+(a) fresh install → 4 empty slots, first boot in ST.SLOTS, pad-✕ reaches
+SELECT with the chosen slot active + persisted; (b) migration proof above;
+(c) idempotent reload; (d) two slots with different progress, switching
+activeSlot swaps the bests/unlocks the game sees, both durable side-by-side;
+(e) the rename reel driven by pad builds a 3-glyph tag ("P1A") that persists,
+plus API sanitisation (ben! → BEN) and the ○-cancel path; (f) clearing one
+slot leaves the others intact and never touches the legacy backup.
+
+## Honest flags for the closer
+
+- **Not run on the Pi** — Tier 2 (no per-frame code changed), so per house
+  rules a Pi FPS pass is not required; a console spot-check of the picker's
+  legibility is welcome when the console is free.  The picker/reel/headers add
+  DOM only to menu states (sim frozen); PLAY is byte-unchanged in behaviour.
+- **Colour is menu-only by design** — the in-game model is not tinted (the
+  brief marks that OPTIONAL and forbids touching the hot path).  The identity
+  the boys see is the menu avatar + tag.
+- The rename screen uses ONE coherent scheme (◀▶ across 4 fields incl. colour,
+  ▲▼ to change) rather than a separate colour mode — chosen as the most
+  kid-proof reading of the brief; △ on the grid still gives a fast recolour
+  without entering rename.
+- `used` flips true on the first romp CLEAR, not on kibble pickup — a slot a
+  kid plays but never clears still reads "NEW GAME".  Deliberate and matches
+  "first real progress written".
+
+## SAVE-SLOTS (2026-09-27, John's rule: "two boys in this house")
+
+4 per-player slots. Built by an OPUS agent (it stalled before the final
+report + screenshots; Fable ran the suites, generated shots3/, and wrote
+this section). Now a house rule in gameconsole/CLAUDE.md.
+
+- SCHEMA: `zoomies_save_v2` = { activeSlot, slots:[S0..S3] }, each
+  S = { name (≤3-glyph tag), color (0-5), used, levels:{l1..l7} }. The
+  per-level record shape is unchanged — it just moved under
+  slots[i].levels. loadSave/writeSave/unlocked keep their signatures and
+  target the active slot internally.
+- MIGRATION LAW: legacy `zoomies_best` folds into slots[0].levels
+  verbatim on first v2-less load (name "P1", used, activeSlot 0), then v2
+  is written. The legacy key is NEVER deleted (backup). Idempotent.
+- NEW STATE ST.SLOTS: "CHOOSE YOUR CAT" 2x2 picker, first-boot on fresh
+  installs. Card = colored cat avatar + tag + progress ("3/7 romps · 6
+  mice" | "NEW GAME"). South pick, □ rename, △ color, START back. Rename
+  = arcade 3-glyph up/down reel + color field (no keyboard). TITLE and
+  SELECT header show the active player + "△ SWITCH PLAYER".
+- __zoomies API added: slots(), setSlot(i), slotInfo(), renameSlot().
+  clearSave() clears the ACTIVE slot only; wipeAllSlots() for a full
+  reset. Neither deletes the legacy backup.
+- SUITES: new test/slots-check.mjs 42/42 (fresh-install first-boot,
+  migration byte-identical + legacy preserved, idempotent re-load, two
+  slots holding different progress + switch swaps what the game sees,
+  rename reel persists + sanitises, single-slot clear leaves others).
+  Retrofit all green: verify 105/105, bot 109/109, spawn 37/37,
+  turns 185/185, zero console errors. Screenshots test/shots3/40-43.
+- CLOSER TODO: ship via webroot + Pi-verify. CRITICAL — the boys' REAL
+  console save lives under legacy `zoomies_best`; the first load of this
+  build ON THE PI is the migration event. Record the legacy key before
+  nav, confirm after that slots[0].levels == their progress AND the
+  legacy key is byte-unchanged. Never bossKill()/write on the kiosk
+  without a backup.

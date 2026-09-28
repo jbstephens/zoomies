@@ -179,9 +179,11 @@ body.tp-on #p2Tag { bottom: 176px; }
    FOUR cards per row — which has to match CARD_ROW in pb-flow, because that
    is the stride up/down paging walks.  4 + 3 at 292 px tall clears 720p with
    the head and the foot on screen (measured in test/shots2/40-select-*.png). */
-#cards.many { gap: 14px; margin-top: 12px; max-width: 1002px; }
-#cards.many + .foot { margin-top: 16px; }
-#cards.many .card { width: 234px; height: 292px; padding: 11px 11px 12px; }
+/* the active-player line under the head costs vertical room, so the compact
+   grid tightens its margins to keep 4 + 3 + head + player + foot on 720p */
+#cards.many { gap: 14px; margin-top: 8px; max-width: 1002px; }
+#cards.many + .foot { margin-top: 10px; }
+#cards.many .card { width: 234px; height: 279px; padding: 11px 11px 12px; }
 #cards.many .card .num { font-size: 15px; }
 #cards.many .card .nm { font-size: 21px; min-height: 48px; }
 #cards.many .card .sub { font-size: 13px; min-height: 17px; }
@@ -255,6 +257,66 @@ body.tp-on #p2Tag { bottom: 176px; }
 
 /* BOOT */
 #boot .l { font-size: 34px; font-weight: 800; letter-spacing: 6px; color: #ffce5a; }
+
+/* ── ACTIVE-PLAYER identity (TITLE + SELECT headers) ─────────────────
+   The chosen slot colour tints the MENU cat avatar only — never the
+   in-game model (house law: the render path stays untouched). */
+#title .player {
+  margin-top: 24px; display: flex; align-items: center; gap: 13px; justify-content: center;
+  font-size: 25px; font-weight: 800; letter-spacing: 3px; color: #ffe9c4;
+  text-shadow: 0 3px 0 rgba(28, 12, 34, 0.9);
+}
+#title .player canvas { width: 56px; height: 48px; display: block; }
+#title .switch { margin-top: 10px; font-size: 21px; letter-spacing: 2px; color: #ffce5a; }
+#select .selplayer {
+  margin-top: 8px; display: flex; align-items: center; gap: 9px; justify-content: center;
+  font-size: 18px; font-weight: 800; letter-spacing: 2px; color: #ffe9c4;
+}
+#select .selplayer canvas { width: 32px; height: 27px; display: block; }
+#select .selplayer .sw { color: #ffce5a; }
+
+/* ── SLOTS — the kid-proof per-player picker (2×2 grid) ──────────────── */
+#slots .head { font-size: 46px; font-weight: 800; letter-spacing: 6px; color: #ffce5a; text-shadow: 0 4px 0 rgba(28,12,34,0.9); }
+#slots .sub { margin-top: 6px; font-size: 21px; letter-spacing: 3px; color: #ffe9c4; }
+#slotGrid {
+  margin-top: 26px; display: grid; grid-template-columns: repeat(2, 306px);
+  grid-template-rows: repeat(2, 196px); gap: 22px;
+}
+.slot {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 12px 14px;
+  background: rgba(26, 14, 32, 0.80);
+  border: 3px solid rgba(255, 206, 128, 0.26); border-radius: 18px;
+  transform: translateY(0); transition: transform 0.14s ease-out, border-color 0.14s linear;
+}
+.slot.sel { border-color: #ffce5a; transform: translateY(-8px); }
+.slot canvas { width: 116px; height: 92px; display: block; }
+.slot .tag { margin-top: 6px; font-size: 33px; font-weight: 800; letter-spacing: 3px; color: #fff4e2; }
+.slot .prog { margin-top: 3px; font-size: 17px; letter-spacing: 1px; color: rgba(255,238,208,0.80); }
+.slot .prog.new { color: #8fe07a; font-weight: 800; letter-spacing: 2px; }
+#slots .foot { margin-top: 26px; font-size: 20px; letter-spacing: 2px; color: rgba(255,238,208,0.82); }
+
+/* RENAME reel — three glyph fields + a colour field, one focus at a time */
+#slotEdit {
+  display: none; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 30px 48px 26px; text-align: center;
+  background: rgba(18, 9, 24, 0.97); border: 3px solid rgba(255, 206, 128, 0.34); border-radius: 20px;
+}
+#slots.editing #slotEdit { display: block; }
+#slotEdit .eh { font-size: 30px; font-weight: 800; letter-spacing: 4px; color: #ffce5a; }
+#reel { margin-top: 22px; display: flex; gap: 18px; justify-content: center; align-items: flex-start; }
+#reel .fld { display: flex; flex-direction: column; align-items: center; width: 74px; }
+#reel .arrow { font-size: 22px; height: 24px; color: rgba(255,238,208,0.45); }
+#reel .fld.sel .arrow { color: #ffce5a; }
+#reel .glyph {
+  width: 66px; height: 82px; margin: 4px 0; display: flex; align-items: center; justify-content: center;
+  font-size: 52px; font-weight: 800; color: #fff4e2;
+  background: rgba(255, 206, 128, 0.10); border: 3px solid rgba(255, 206, 128, 0.26); border-radius: 12px;
+}
+#reel .fld.sel .glyph { border-color: #ffce5a; background: rgba(255, 206, 128, 0.22); }
+#reel .glyph canvas { width: 60px; height: 66px; display: block; }
+#reel .lbl { margin-top: 5px; font-size: 12px; letter-spacing: 1px; color: rgba(255,238,208,0.60); }
+#slotEdit .ef { margin-top: 24px; font-size: 18px; letter-spacing: 2px; color: rgba(255,238,208,0.82); }
 </style>
 </head>
 <body>
@@ -289,14 +351,29 @@ body.tp-on #p2Tag { bottom: 176px; }
     <div class="logo ttl">ZOOMIES!</div>
     <div class="tag">A CAT IS LOOSE IN THE HOUSE</div>
     <div class="press">PRESS <b>&#10005;</b> / SPACE TO START</div>
+    <div class="player"><canvas id="titleCat" width="60" height="50"></canvas><span id="titlePlayerName">P1</span></div>
+    <div class="switch">&#9651; SWITCH PLAYER</div>
     <div class="p2h">P2: PRESS &#10005; ANY TIME FOR THE LASER</div>
     <div class="bestline" id="titleBest"></div>
   </div>
 
   <div id="select" class="ov scrim">
     <div class="head ttl">PICK A ROMP</div>
+    <div class="selplayer"><canvas id="selCat" width="48" height="40"></canvas><span id="selPlayerName">P1</span>&nbsp;&#183;&nbsp;<span class="sw">&#9651; SWITCH PLAYER</span></div>
     <div id="cards"></div>
     <div class="foot">&#9664; &#9654; CHOOSE &nbsp;&nbsp; &#10005; GO &nbsp;&nbsp; &#9711; BACK</div>
+  </div>
+
+  <div id="slots" class="ov scrim">
+    <div class="head ttl">CHOOSE YOUR CAT</div>
+    <div class="sub">whose zoomies are these?</div>
+    <div id="slotGrid"></div>
+    <div class="foot">&#9664;&#9654;&#9650;&#9660; PICK &nbsp; &#10005; PLAY &nbsp; &#9723; RENAME &nbsp; &#9651; COLOR &nbsp; START BACK</div>
+    <div id="slotEdit" class="pnl">
+      <div class="eh">NAME YOUR CAT</div>
+      <div id="reel"></div>
+      <div class="ef">&#9664;&#9654; FIELD &nbsp; &#9650;&#9660; CHANGE &nbsp; &#10005; OK &nbsp; &#9711; CANCEL</div>
+    </div>
   </div>
 
   <div id="intro" class="ov">

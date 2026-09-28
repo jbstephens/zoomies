@@ -42,7 +42,13 @@ async function perf(page, label) {
 async function newPage(opts) {
   const page = await openPage(9378, Object.assign({ width: 1280, height: 720 }, opts || {}));
   await page.nav(srv.url + '/index.html?t=' + Date.now());
-  await page.waitFor("window.__zoomies && __zoomies.state()==='TITLE'", 'TITLE', 25000);
+  // SAVE SLOTS: a genuinely fresh localStorage boots into the slot picker
+  // (first-boot pick-a-cat).  The v1 suites all assume the returning-boot
+  // baseline (TITLE); normalise to it here — the fresh→SLOTS boot is covered
+  // by its own suite (test/slots-check.mjs).  Not a weakening: no assertion
+  // changes, only the boot entry point the page happens to land on.
+  await page.waitFor("window.__zoomies && (__zoomies.state()==='TITLE' || __zoomies.state()==='SLOTS')", 'boot', 25000);
+  await page.eval("__zoomies.state()==='SLOTS' && __zoomies.setState('TITLE')");
   return page;
 }
 

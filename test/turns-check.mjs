@@ -32,7 +32,10 @@ const axis = (ax, v) => page.eval(`__axis(0,${ax},${v})`);
 try {
   page = await openPage(9377, { width: 1280, height: 720 });
   await page.nav(srv.url + '/index.html?t=' + Date.now());
-  await page.waitFor("window.__zoomies && __zoomies.state()==='TITLE'", 'TITLE', 25000);
+  // SAVE SLOTS: fresh localStorage boots to the slot picker; normalise to the
+  // returning-boot baseline (TITLE) the v1 suites assume.
+  await page.waitFor("window.__zoomies && (__zoomies.state()==='TITLE' || __zoomies.state()==='SLOTS')", 'boot', 25000);
+  await page.eval("__zoomies.state()==='SLOTS' && __zoomies.setState('TITLE')");
   await page.connectPad(0);
   await page.eval('__zoomies.clearSave(); __zoomies.forceUnlockAll();');
 
@@ -255,14 +258,19 @@ try {
   {
     const p2 = await openPage(9377, { width: 1280, height: 720 });
     await p2.nav(srv.url + '/index.html?t=' + Date.now());
-    await p2.waitFor("window.__zoomies && __zoomies.state()==='TITLE'", 'TITLE', 25000);
+    await p2.waitFor("window.__zoomies && (__zoomies.state()==='TITLE' || __zoomies.state()==='SLOTS')", 'boot', 25000);
     // write the boys' console save EXACTLY as the shipped v1 wrote it
     const old = {
       l1: { bestKibble: 412, bestTime: 141.5, mice: [true, true, false], cleared: true },
       l2: { bestKibble: 388, bestTime: 166.2, mice: [true, false, false], cleared: true },
       l3: { bestKibble: 501, bestTime: 188.9, mice: [true, true, true], cleared: true },
     };
+    // SAVE SLOTS migration is v1→v2: fold the legacy flat key into slot 0's
+    // levels.  It fires only when v2 is absent, so clear the v2 key this shared
+    // Chrome profile already wrote at boot, then load.  loadSave() reads the
+    // ACTIVE slot's levels back into SAVE, so save() is that migrated slot.
     await p2.eval(`localStorage.setItem('zoomies_best', ${JSON.stringify(JSON.stringify(old))})`);
+    await p2.eval("localStorage.removeItem('zoomies_save_v2')");
     await p2.eval('loadSave()');
     const sv = await p2.eval('__zoomies.save()');
     t.ok(sv.l1.bestKibble === 412 && sv.l1.bestTime === 141.5 && sv.l1.cleared === true,

@@ -51,7 +51,10 @@ const boss = () => page.eval('__zoomies.boss()');
 try {
   page = await openPage(9379, { width: 1280, height: 720 });
   await page.nav(srv.url + '/index.html?t=' + Date.now());
-  await page.waitFor("window.__zoomies && __zoomies.state()==='TITLE'", 'TITLE', 25000);
+  // SAVE SLOTS: a fresh localStorage boots to the slot picker; normalise to
+  // the returning-boot baseline (TITLE) the v1 suites assume.
+  await page.waitFor("window.__zoomies && (__zoomies.state()==='TITLE' || __zoomies.state()==='SLOTS')", 'boot', 25000);
+  await page.eval("__zoomies.state()==='SLOTS' && __zoomies.setState('TITLE')");
   await page.connectPad(0);
   await page.eval('__zoomies.clearSave(); __zoomies.forceUnlockAll();');
 
